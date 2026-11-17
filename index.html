@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#1F3C6E">
 <title>ארמית: מסכת שבת</title>
 <meta name="theme-color" content="#f4f6fa">
 <script>/* the display mode before the first paint, so a light screen never flashes dark: light unless dark was chosen */
-try { var st = (JSON.parse(localStorage.getItem('aramit-shabbat-v1')) || {}).settings || {}; document.documentElement.setAttribute('data-theme', st.theme === 'dark' ? 'dark' : 'light'); } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }</script>
+var dk = false; try { var st = (JSON.parse(localStorage.getItem('aramit-shabbat-v1')) || {}).settings || {}; dk = st.theme === 'dark'; } catch (e) { /* storage blocked: light */ }
+document.documentElement.setAttribute('data-theme', dk ? 'dark' : 'light');
+if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content', '#1b2436');</script>
+<style>html[data-theme=dark],html[data-theme=dark] body{background:#1B2436;color-scheme:dark}html[data-theme=light],html[data-theme=light] body{background:#F4F6FA}</style>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icons/favicon-48.png">

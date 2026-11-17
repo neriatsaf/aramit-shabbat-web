@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
@@ -90,7 +90,9 @@ function migrate() {
   if (changed) { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
 }
 let ver = 0; /* rises on every save: a panel drawn at an older value may show stale progress */
-function save() { ver++; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('לא ניתן לשמור במכשיר'); } }
+/* in a private window or with storage blocked the app keeps working from memory, and says so once */
+let saveWarned = false;
+function save() { ver++; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!saveWarned) { saveWarned = true; toast('לא ניתן לשמור במכשיר הזה (גלישה פרטית?). ההתקדמות תישמר רק עד סגירת הדף'); } } }
 
 /* ---------- helpers ---------- */
 /* the four main screens live side by side on one rail, and each keeps what it shows until it needs redrawing.
@@ -434,7 +436,7 @@ window.addEventListener('popstate', ev => {
 });
 /* what each panel shows now: the value of ver when it was drawn, and the inner screen if any */
 const drawn = {};
-function fresh(tab) { const d = drawn[tab]; return !!d && d.ver === ver && !d.sub; }
+function fresh(tab) { const d = drawn[tab]; return !!d && d.ver === ver && !d.sub && d.day === localDay(); }
 function paint(tab) {
   const keepView = view, sub = tab === R.tab ? R.sub : null;
   view = PANEL[tab]; view.className = 'panel'; view.style.paddingBottom = '';
@@ -457,12 +459,17 @@ function paint(tab) {
     else if (sub === 'more') renderMore();
     else renderLearn();
   } finally {
-    drawn[tab] = { ver, sub: sub && R.tab === tab ? R.sub : null };
+    drawn[tab] = { ver, sub: sub && R.tab === tab ? R.sub : null, day: localDay() };
     view = tab === R.tab ? PANEL[tab] : keepView;
   }
 }
 /* keep: a plain move between two main screens, which keeps the panel as it is when nothing changed since it was drawn */
 function render(keep) {
+  if (R.tab === 'xw' && R.sub === 'board' && xwStale()) {
+    xwStopClock(); xg = null; R = { tab: 'xw', sub: null };
+    try { history.replaceState(R, ''); } catch (e) { /* ignore */ }
+    toast('התחיל יום חדש: הלוח היומי של היום מחכה'); keep = false;
+  }
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === R.tab)));
   $('subtitle').textContent = D.length + ' מילים וביטויים, ' + CN.length + ' מושגים';
   const from = shownTab;
@@ -1551,6 +1558,8 @@ function xwLoad() {
   try {
     const o = JSON.parse(localStorage.getItem(XKEY) || 'null');
     if (!o || (o.v !== 1 && o.v !== 2) || !Array.isArray(o.words) || o.done) return null;
+    /* a daily board belongs to its day: on a later day it is not offered again, and today's board starts clean */
+    if (o.anchor && o.day && o.day !== localDay()) return null;
     const R = o.v === 2 ? o.R : XN, C = o.v === 2 ? o.C : XN;
     const b = xwFromRefs(R, C, o.v === 2 ? o.words : o.words.map(w => ['d'].concat(w)));
     if (!b) return null;
@@ -1618,6 +1627,8 @@ function startXW() {
   });
 }
 /* the daily board: all words, every level, the same for everyone on the same date */
+/* a daily board left open past midnight: it is closed, so the day that ended keeps its record and today starts clean */
+function xwStale() { return !!(xg && xg.type === 'xw' && xg.day && xg.b.anchor && !xg.done && xg.day !== localDay()); }
 function startXWDaily() {
   const day = localDay(), saved = xwLoad();
   if (saved && saved.day === day && saved.b.anchor) { xwOpen(saved); return; }
@@ -1703,6 +1714,18 @@ function xwBarHtml() {
   const w = xg.b.words[xg.act];
   return '<p><b>' + esc(xwDef(w.e)) + '</b> <span>(' + w.cells.length + ' אותיות, ' + XNAME[w.t] + ')</span></p>';
 }
+/* a long definition keeps its two lines over the keyboard: the type gets smaller until it fits, and only a definition that
+   still does not fit at the smallest size takes a third line, with the board made smaller to keep the keyboard in place */
+function xwFitBar() {
+  const p = view.querySelector('#xw-bar p'); if (!p) return;
+  const three = !!(xg && xg.barL3);
+  p.style.fontSize = '';
+  let size = 0.98;
+  while (p.scrollHeight > p.clientHeight + 1 && size > 0.74) { size -= 0.04; p.style.fontSize = size.toFixed(2) + 'rem'; }
+  if (p.scrollHeight > p.clientHeight + 1) p.classList.add('l3');
+  if (xg) xg.barL3 = p.classList.contains('l3');
+  if (three !== p.classList.contains('l3') && $('xw-grid') && $('xw-grid').style.width) xwFit();
+}
 function renderXW() {
   const g = xg;
   view.className = 'panel tight';
@@ -1717,7 +1740,7 @@ function renderXW() {
   xwClock();
   $('quit').onclick = () => { if (g.b.L.every((ch, k) => !ch || g.typed[k])) xwSummary(); else goBack(); };
   $('xw-new').onclick = () => startXW();
-  $('xw-grid').onclick = ev => { const t = ev.target.closest('[data-k]'); if (t) xwTap(+t.dataset.k); };
+  $('xw-grid').onclick = ev => { const t = ev.target.closest('[data-k]'), q = ev.target.closest('.xq'); if (t) xwTap(+t.dataset.k, q ? +q.dataset.wi : undefined); };
   view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => xwType(b.dataset.ch); });
   $('xw-del').onclick = xwDel;
   $('xw-hint').onclick = xwHint;
@@ -1743,12 +1766,17 @@ function xwFit() {
   grid.style.width = Math.floor(cell * C) + 'px'; grid.style.height = Math.floor(cell * R) + 'px';
   const spare = free - Math.floor(cell * R);
   if (spare > 0) kb.style.setProperty('--kh', Math.min(52, 44 + spare / 3).toFixed(1) + 'px');
+  /* the keyboard must end above the tab bar: whatever still overflows comes off the board */
+  if (tabs) {
+    const over = kb.getBoundingClientRect().bottom - tabs.getBoundingClientRect().top + 2;
+    if (over > 0) { kb.style.setProperty('--kh', '44px'); const c2 = Math.max(20, cell - Math.max(over, kb.getBoundingClientRect().bottom - tabs.getBoundingClientRect().top + 2) / R); grid.style.width = Math.floor(c2 * C) + 'px'; grid.style.height = Math.floor(c2 * R) + 'px'; }
+  }
 }
 window.addEventListener('resize', () => { if (R.tab === 'xw' && R.sub === 'board' && xg && xg.type === 'xw') { xwFit(); xwFitClues(); } });
 function xwPaint() {
   const g = xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
   $('xw-grid').innerHTML = xwBoardHtml();
-  $('xw-bar').innerHTML = xwBarHtml();
+  $('xw-bar').innerHTML = xwBarHtml(); xwFitBar();
   const hl = XW_HINTS - g.hint.size, cl = XW_CHECKS - (g.checks || 0), hb = $('xw-hint'), cb = $('xw-check');
   hb.textContent = 'רמז (' + hl + ') 💡'; hb.disabled = hl <= 0 || g.done;
   cb.textContent = 'בדיקה (' + cl + ') ✓'; cb.disabled = cl <= 0 || g.done;
@@ -1757,12 +1785,16 @@ function xwPaint() {
   pb.setAttribute('aria-label', pin ? 'הסמן נעול במשבצת: הקלדה מחליפה את האות בלי להתקדם' : 'נעילת הסמן במשבצת');
   xwFitClues();
   $('xw-left').textContent = (g.day && g.b.anchor ? '#' + g.b.ed + ' ' + g.b.theme + ', ' : g.b.words.length + ' מילים, ') + (left ? 'נשארו ' + left : 'הלוח מלא');
+  /* anything that changed height on this paint (a line of text that wrapped) must not push the keyboard under the tab bar */
+  const kb = view.querySelector('.xkb'), tabs = document.getElementById('tabs'), grid = $('xw-grid');
+  if (kb && tabs && grid && grid.style.width && kb.getBoundingClientRect().bottom > tabs.getBoundingClientRect().top + 1) xwFit();
 }
-function xwTap(k) {
+/* a tap on a definition selects the word of the half that was touched; a tap elsewhere in the cell moves between its words */
+function xwTap(k, wi) {
   const g = xg, b = g.b;
   if (b.K[k]) {
     const ks = b.K[k], i = ks.findIndex(x => x.wi === g.act);
-    g.act = ks[i >= 0 && ks.length > 1 ? (i + 1) % ks.length : 0].wi;
+    g.act = wi !== undefined && ks.some(x => x.wi === wi) ? wi : ks[i >= 0 && ks.length > 1 ? (i + 1) % ks.length : 0].wi;
     const w = b.words[g.act]; const empty = w.cells.find(c => !g.typed[c]); g.cur = empty !== undefined ? empty : w.cells[0];
   } else if (b.L[k]) {
     const ws = g.cw[k];
@@ -1777,6 +1809,7 @@ function xwStep(dir) {
   if (j >= 0 && j < w.cells.length) xg.cur = w.cells[j];
 }
 function xwType(ch) {
+  if (xwStale()) { render(false); return; }
   const g = xg, w = g.b.words[g.act];
   if (g.done) return;
   /* with the pin on, the letter replaces the one under the cursor and the cursor stays */
@@ -1820,6 +1853,7 @@ function xwClear() {
   xwPaint(); xwSave();
 }
 function xwHint() {
+  if (xwStale()) { render(false); return; }
   if (xg.done) return;
   if (xg.hint.size >= XW_HINTS) { toast('נוצלו כל ' + XW_HINTS + ' הרמזים של הלוח'); return; }
   const g = xg, w = g.b.words[g.act], ok = k => g.typed[k] && norm(g.typed[k]) === g.b.L[k];
@@ -1918,7 +1952,12 @@ function xwClock() {
   }, 1000);
   timers.push(xwTick);
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden && xg && xg.type === 'xw' && !xg.done) xwSave(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (xg && xg.type === 'xw' && !xg.done) xwSave(); return; }
+  /* back in front: a new day redraws the screen, and the web version asks whether a newer version was published */
+  if (drawn[R.tab] && drawn[R.tab].day !== localDay() && !sheetOpen) render(false);
+  if (!NATIVE && 'serviceWorker' in navigator && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then(r => { if (r) r.update(); }).catch(() => { /* offline */ });
+});
 document.addEventListener('keydown', ev => {
   if (!(R.tab === 'xw' && R.sub === 'board' && xg && xg.type === 'xw') || sheetOpen || ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (ev.key === 'Backspace') { ev.preventDefault(); xwDel(); }
@@ -2000,9 +2039,12 @@ function wdFit() {
   const t = Math.floor(Math.max(34, Math.min((wide - 24) / 5, (free - 30) / 6, 62)));
   grid.style.setProperty('--wt', t + 'px');
 }
-function wdType(ch) { const g = wd; if (g.done || g.cur.length >= 5) return; g.cur += norm(ch); renderWordle(); }
-function wdDel() { const g = wd; if (g.done) return; g.cur = g.cur.slice(0, -1); renderWordle(); }
+/* the word of a day that has ended gives way to today's word as soon as the reader touches the board */
+function wdRoll() { if (wd && wd.day !== localDay()) { wd = wdToday(); if (wd) { renderWordle(); toast('התחיל יום חדש: זו המילה של היום'); } return true; } return false; }
+function wdType(ch) { if (wdRoll()) return; const g = wd; if (g.done || g.cur.length >= 5) return; g.cur += norm(ch); renderWordle(); }
+function wdDel() { if (wdRoll()) return; const g = wd; if (g.done) return; g.cur = g.cur.slice(0, -1); renderWordle(); }
 function wdEnter() {
+  if (wdRoll()) return;
   const g = wd; if (g.done) return;
   if (g.cur.length < 5) { toast('צריך חמש אותיות'); return; }
   if (!wdDict().has(g.cur) && g.cur !== g.ans) { toast('המילה הזו לא נמצאת במאגר של האפליקציה'); const rr = view.querySelectorAll('.wrow')[g.rows.length]; if (rr) { rr.classList.remove('shake'); void rr.offsetWidth; rr.classList.add('shake'); } return; }
@@ -2233,7 +2275,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) openOnboarding(0);
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
+if (/[?&]test\b/.test(location.search)) window.__t = { wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
 
 /* hardware back button inside the Android app */
 try {
