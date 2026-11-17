@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
@@ -19,7 +19,9 @@ const FEEDBACK_PHONE = '';
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const STANDALONE = !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone);
 const VARIANTS = window.VARIANTS || {}, ALIASES = window.ALIASES || {};
-const D = window.DECK.map((r, i) => ({ w: r[0], m0: r[1], c: r[2], a: r[3], x: r[4] || 0, p: r[0].indexOf(' ') >= 0, i, v: VARIANTS[r[0]] || [], pk: r[5] || 0 }));
+/* the first DECK_CORE entries are the chosen store (three uses or more in the Gemara); the rest is the expanded store of all 24 chapters, rare words included */
+const CORE_N = window.DECK_CORE || window.DECK.length;
+const D = window.DECK.map((r, i) => ({ w: r[0], m0: r[1], c: r[2], a: r[3], x: r[4] || 0, p: r[0].indexOf(' ') >= 0, i, v: VARIANTS[r[0]] || [], pk: r[5] || 0, rare: !!r[6], ext: i >= CORE_N }));
 const PEREKS = window.PEREKS || [['', 0]];
 D.forEach(e => {
   e.nw = norm(e.w); e.sw = e.nw.split(' ').map(stripPrefix).join(' ');
@@ -138,8 +140,8 @@ function ordPk(k) { return ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'
 function cSource(c) { return (c.mi ? 'משנה' : 'גמרא') + ', ' + dafName(c.a) + ', פרק ' + ordPk(c.pk) + ' (' + PEREKS[c.pk][0] + ')'; }
 function altLine(e) { return e.v.length ? 'נכתב גם: ' + e.v.join(', ') : ''; }
 function countLine(e) {
-  return e.x ? 'הצורה הכתובה מופיעה ' + e.c + ' פעמים במסכת, כולל שימושים אחרים שלה'
-             : e.c + ' פעמים במסכת';
+  if (e.x) return 'הצורה הכתובה מופיעה ' + e.c + ' פעמים במסכת, כולל שימושים אחרים שלה';
+  return (e.c === 1 ? 'פעם אחת' : e.c === 2 ? 'פעמיים' : e.c + ' פעמים') + ' במסכת' + (e.ext ? ', במשנה ובגמרא' : '');
 }
 let toastTimer = null;
 function toast(t) { const el = $('toast'); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2200); }
@@ -764,7 +766,9 @@ function drillOn(list, replace) {
 }
 
 /* ---------- dictionary ---------- */
-const dict = { q: '', sort: 'freq', filter: 'all', from: 0, open: null, limit: 120, editing: false };
+/* the list draws DICT_STEP rows at a time and draws the next ones when the reader scrolls near its end */
+const DICT_STEP = 80;
+const dict = { q: '', sort: 'freq', filter: 'all', from: 0, open: null, limit: DICT_STEP, editing: false };
 /* one search box serves both stores: results from the tab on screen come first, and results from the other store follow under their own heading */
 function wordSearch(list, q) {
   const qs = stripPrefix(q), scored = [];
@@ -773,12 +777,14 @@ function wordSearch(list, q) {
     if (e.nw === q || e.sw === qs || e.nw === qs || e.alt.some(v => v[0] === q || v[1] === qs || v[0] === qs)) sc = 0;
     else if (e.nw.startsWith(q) || e.sw.startsWith(qs) || (e.p && e.sw.split(' ').some(x => x.startsWith(qs))) || e.alt.some(v => v[0].startsWith(q) || v[1].startsWith(qs))) sc = 1;
     else if (e.nw.includes(q) || (qs.length >= 2 && (e.sw.includes(qs) || e.nw.includes(qs)))) sc = 2;
-    else if (norm(gloss(e)).includes(q)) sc = 3;
+    else if (q.length >= 2 && normGloss(e).includes(q)) sc = 3;
     if (sc >= 0) scored.push([sc, e]);
   }
   scored.sort((x, y) => x[0] - y[0]);
   return scored.map(x => x[1]);
 }
+/* the normalized gloss is kept with the entry and made again only when the gloss changes, so a search over thousands of entries stays quick */
+function normGloss(e) { const g = gloss(e); if (e._g !== g) { e._g = g; e._ng = norm(g); } return e._ng; }
 function conceptSearch(list, q) {
   const qs = stripPrefix(q), scored = [];
   for (const c of list) {
@@ -802,6 +808,7 @@ function dictRows() {
     if (dict.filter === 'seen' && !S.prog[e.w]) return false;
     if (dict.filter === 'new' && S.prog[e.w]) return false;
     if (dict.filter === 'fav' && !S.fav[e.w]) return false;
+    if (dict.filter === 'rare' && !e.rare) return false;
     if (dict.sort === 'daf' && dafNum(e.a) < dict.from) return false;
     return true;
   });
@@ -822,7 +829,7 @@ function cRows() {
 }
 function wordItem(e) {
   const open = dict.open === e.w;
-  return '<div class="item' + (open ? ' open' : '') + '" data-w="' + esc(e.w) + '"><span class="w">' + esc(e.w) + dotColor(e) + '</span>' +
+  return '<div class="item' + (open ? ' open' : '') + '" data-w="' + esc(e.w) + '"><span class="w">' + esc(e.w) + dotColor(e) + (e.rare ? '<span class="rare">נדיר</span>' : '') + '</span>' +
     '<span class="n"><b>' + (e.x ? '~' : '') + e.c + '</b>' + dafShort(e.a) + '</span>' + starHtml(e) +
     '<span class="m">' + esc(gloss(e)) + (S.edits[e.w] ? ' <span class="edited">נערך</span>' : '') + (e.v.length ? '<br><span class="small">' + esc(altLine(e)) + '</span>' : '') + '</span>' + (open ? detailHtml(e) : '') + '</div>';
 }
@@ -850,22 +857,24 @@ function countText(kind, q, n, m) {
 }
 function refill() { if (dictKind === 'concepts' && CN.length) fillCDict(); else fillDict(); }
 /* a tap on any card, from either store, opens it in place. One card is open at a time */
+function bindItem(el) {
+  el.onclick = ev => {
+    if (ev.target.closest('.detail')) return;
+    if (el.dataset.w !== undefined) { dict.open = dict.open === el.dataset.w ? null : el.dataset.w; cdict.open = null; }
+    else { const i = +el.dataset.i; cdict.open = cdict.open === i ? null : i; dict.open = null; }
+    dict.editing = false; cdict.editing = false; refill();
+  };
+}
 function bindItems() {
-  view.querySelectorAll('#dlist .item, #dother .item').forEach(el => {
-    el.onclick = ev => {
-      if (ev.target.closest('.detail')) return;
-      if (el.dataset.w !== undefined) { dict.open = dict.open === el.dataset.w ? null : el.dataset.w; cdict.open = null; }
-      else { const i = +el.dataset.i; cdict.open = cdict.open === i ? null : i; dict.open = null; }
-      dict.editing = false; cdict.editing = false; refill();
-    };
-  });
+  view.querySelectorAll('#dlist .item, #dother .item').forEach(bindItem);
   bindStars(view, refill);
   const det = view.querySelector('.detail'); if (!det) return;
   if (det.parentNode.dataset.w !== undefined) bindDetail(det, BY.get(det.parentNode.dataset.w)); else bindCDetail(CN[+det.parentNode.dataset.i]);
 }
 function bindSearch() {
   const qi = $('dq');
-  qi.oninput = () => { dict.q = qi.value; dict.limit = 120; dict.open = null; cdict.open = null; refill(); };
+  let tm = null;
+  qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { dict.q = qi.value; dict.limit = DICT_STEP; dict.open = null; cdict.open = null; refill(); }, 90); };
 }
 const SEARCH_HINT = 'חיפוש במילים, בביטויים ובמושגים';
 function renderCDict() {
@@ -922,7 +931,7 @@ function bindCDetail(c) {
 function renderDict() {
   if (dictKind === 'concepts' && CN.length) return renderCDict();
   const dafOpts = []; for (let n = 2; n <= 157; n++) dafOpts.push('<option value="' + n + '"' + (dict.from === n ? ' selected' : '') + '>מדף ' + hebNum(n) + '</option>');
-  const chips = [['all', 'הכול'], ['fav', 'מועדפים'], ['words', 'מילים'], ['phrases', 'ביטויים'], ['seen', 'למדתי'], ['new', 'עוד לא למדתי']];
+  const chips = [['all', 'הכול'], ['fav', 'מועדפים'], ['words', 'מילים'], ['phrases', 'ביטויים'], ['rare', 'מילים נדירות'], ['seen', 'למדתי'], ['new', 'עוד לא למדתי']];
   view.innerHTML = (CN.length ? kindSeg('dkind', 'words') : '') + meterHtml(D, 'מילים וביטויים', 'dmeter') +
     '<input type="search" id="dq" placeholder="' + (CN.length ? SEARCH_HINT : 'חיפוש בארמית או בעברית') + '" value="' + esc(dict.q) + '" autocomplete="off" enterkeyhint="search">' +
     '<div class="seg" id="dsort"><button data-v="freq" aria-pressed="' + (dict.sort === 'freq') + '">לפי שכיחות</button><button data-v="daf" aria-pressed="' + (dict.sort === 'daf') + '">לפי סדר הדפים</button></div>' +
@@ -932,24 +941,51 @@ function renderDict() {
   bindSeg('dkind', v => { dictKind = v; renderDict(); });
   $('dmeter').onclick = openProgress;
   bindSearch();
-  bindSeg('dsort', v => { dict.sort = v; dict.limit = 120; renderDict(); });
-  const df = $('dfrom'); if (df) df.onchange = () => { dict.from = +df.value; dict.limit = 120; fillDict(); };
-  $('dchips').querySelectorAll('button').forEach(b => { b.onclick = () => { dict.filter = b.dataset.v; dict.limit = 120; renderDict(); }; });
+  bindSeg('dsort', v => { dict.sort = v; dict.limit = DICT_STEP; renderDict(); });
+  const df = $('dfrom'); if (df) df.onchange = () => { dict.from = +df.value; dict.limit = DICT_STEP; fillDict(); };
+  $('dchips').querySelectorAll('button').forEach(b => { b.onclick = () => { dict.filter = b.dataset.v; dict.limit = DICT_STEP; renderDict(); }; });
   fillDict();
 }
-function fillDict() {
-  const q = norm(dict.q), rows = dictRows(), shown = rows.slice(0, dict.limit), other = q && CN.length ? conceptSearch(CN, q) : [];
-  $('dcount').textContent = countText('words', q, rows.length, other.length);
-  let h = '', last = -1; const grouped = dict.sort === 'daf' && !q;
-  for (const e of shown) {
+let dictRowsNow = [], dictObs = null;
+function dictHtml(from, to) {
+  const grouped = dict.sort === 'daf' && !norm(dict.q); let h = '', last = from > 0 ? dafNum(dictRowsNow[from - 1].a) : -1;
+  for (let k = from; k < to; k++) {
+    const e = dictRowsNow[k];
     if (grouped && dafNum(e.a) !== last) { last = dafNum(e.a); h += '<div class="dafhead">דף ' + hebNum(last) + '</div>'; }
     h += wordItem(e);
   }
-  $('dlist').innerHTML = h;
-  $('dmore').innerHTML = rows.length > shown.length ? '<button class="btn ghost wide" id="dmorebtn">להציג עוד (' + (rows.length - shown.length) + ')</button>' : '';
-  const mb = $('dmorebtn'); if (mb) mb.onclick = () => { dict.limit += 200; fillDict(); };
+  return h;
+}
+function fillDict() {
+  const q = norm(dict.q), rows = dictRows(), other = q && CN.length ? conceptSearch(CN, q) : [];
+  dictRowsNow = rows; dict.limit = Math.max(DICT_STEP, Math.min(dict.limit, rows.length));
+  $('dcount').textContent = countText('words', q, rows.length, other.length);
+  $('dlist').innerHTML = dictHtml(0, Math.min(dict.limit, rows.length));
   $('dother').innerHTML = otherHtml('concepts', other);
+  dictMore();
   bindItems();
+}
+/* the next rows are added below the ones on screen, without drawing the list again */
+function dictGrow() {
+  const list = $('dlist'), shown = Math.min(dict.limit, dictRowsNow.length);
+  if (!list || shown >= dictRowsNow.length) return;
+  dict.limit = Math.min(shown + DICT_STEP, dictRowsNow.length);
+  list.insertAdjacentHTML('beforeend', dictHtml(shown, dict.limit));
+  [...list.children].forEach(el => { if (el.classList.contains('item') && !el.onclick) bindItem(el); });
+  bindStars(list, refill);
+  dictMore();
+}
+function dictMore() {
+  const box = $('dmore'); if (!box) return;
+  const left = dictRowsNow.length - Math.min(dict.limit, dictRowsNow.length);
+  if (dictObs) { dictObs.disconnect(); dictObs = null; }
+  box.innerHTML = left > 0 ? '<button class="btn ghost wide" id="dmorebtn">עוד ' + left + ' ערכים</button>' : '';
+  if (left <= 0) return;
+  $('dmorebtn').onclick = dictGrow;
+  if ('IntersectionObserver' in window) {
+    dictObs = new IntersectionObserver(en => { if (en.some(x => x.isIntersecting)) dictGrow(); }, { root: null, rootMargin: '0px 0px 600px 0px' });
+    dictObs.observe(box);
+  }
 }
 function detailHtml(e) {
   const p = S.prog[e.w];
@@ -1365,8 +1401,12 @@ function xwDailyBoard(day) {
 /* each board allows three hints (one letter each) and three error checks */
 const XW_HINTS = 3, XW_CHECKS = 3;
 const XN = 9;
+/* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
+   The level ranks the chosen store by frequency, and every word of the expanded store counts as hard */
 const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && short(e).length <= 34);
-const XW_RANK = new Map(XW_ALL.slice().sort((x, y) => y.c - x.c).map((e, i) => [e, i / Math.max(1, XW_ALL.length - 1)]));
+const XW_CORE = XW_ALL.filter(e => !e.ext);
+const XW_RANK = new Map(XW_CORE.slice().sort((x, y) => y.c - x.c).map((e, i) => [e, i / Math.max(1, XW_CORE.length - 1)]));
+XW_ALL.forEach(e => { if (e.ext) XW_RANK.set(e, 1); });
 const XW_LV = { all: 'הכול', easy: 'קל', mid: 'בינוני', hard: 'קשה' };
 const xwCfg = { src: 'all', lv: 'all', pereks: [] };
 function restoreXw() {
@@ -1378,6 +1418,7 @@ function restoreXw() {
 function saveXw() { S.settings.xw = { src: xwCfg.src, lv: xwCfg.lv, pereks: xwCfg.pereks.slice() }; save(); }
 function xwLevelOk(e) { const r = XW_RANK.get(e); return xwCfg.lv === 'easy' ? r < 1 / 3 : xwCfg.lv === 'mid' ? r >= 1 / 3 && r < 2 / 3 : xwCfg.lv === 'hard' ? r >= 2 / 3 : true; }
 function xwSrcOk(e, k) {
+  if (e.ext && xwCfg.src !== 'pk') return false;
   if (xwCfg.src === 'learned') return !!S.prog[pid(e)];
   if (xwCfg.src === 'pk') return k === undefined ? (!xwCfg.pereks.length || xwCfg.pereks.some(p => e.pkm & (1 << p))) : !!(e.pkm & (1 << k));
   return true;
@@ -2122,7 +2163,7 @@ function openSettings(confirmReset) {
       ? '<div class="note">האיפוס ימחק את ההתקדמות ב־' + st.seen + ' ערכים, את המועדפים, את רשימת הטעויות, את השיאים ואת הפירושים שערכת. אי אפשר לבטל אותו.</div><div class="two"><button class="btn bad" id="s-reset-yes">למחוק הכול</button><button class="btn ghost" id="s-reset-no">ביטול</button></div>'
       : '<button class="btn line wide" id="s-reset">איפוס כל ההתקדמות</button>') +
     '<div class="stack small muted"><p><b>על האפליקציה</b></p>' +
-    '<p>המאגר כולל ' + WORDS.length + ' מילים ו־' + PHRASES.length + ' ביטויים בארמית שמופיעים בגמרא של מסכת שבת שלוש פעמים ומעלה. מספר ההופעות נספר לפי צורת הכתיב, כולל אותיות השימוש ו, ד, ל, ב, כ. המשנה לא נספרה.</p>' +
+    '<p>המאגר כולל ' + D.length + ' ערכים. ' + CORE_N + ' מהם הם המאגר הנבחר: מילים וביטויים בארמית שמופיעים בגמרא של מסכת שבת שלוש פעמים ומעלה, והספירה שלהם היא בגמרא בלבד. שאר ' + (D.length - CORE_N) + ' הערכים הם המאגר המורחב מכל 24 הפרקים: מילים ארמיות, פעלים, מונחים ושמות של חפצים וצמחים, מן המשנה ומן הגמרא, וביניהם ' + D.filter(e => e.rare).length + ' מילים נדירות שמופיעות פעם או פעמיים בלבד. מספר ההופעות נספר לפי צורת הכתיב, כולל אותיות השימוש.</p>' +
     (CN.length ? '<p>מילון המושגים כולל ' + CN.length + ' מושגים מן המשנה ומן הגמרא. מראי המקום נבדקו מול נוסח המסכת, וההסברים קצרים ואינם תחליף ללימוד הסוגיה.</p>' : '') +
     '<p>הפירושים קצרים ונועדו לעזור בקריאה שוטפת. הם אינם תחליף לרש"י ולמפרשים, ובמילה שיש לה כמה מובנים ייתכן שהפירוש לא יתאים לכל מקום. אפשר לתקן כל פירוש במילון, והתיקון נשמר במכשיר שלך.</p>' +
     '<p>הספירה נעשתה על נוסח הגמרא שבספריא (מהדורת ויליאם דוידסון, קורן). הגופנים: פרנק ריהל ליברה ואסיסטנט, ברישיון פתוח (OFL).</p>' +
