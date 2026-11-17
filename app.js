@@ -9,9 +9,12 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.1.6';
+const VERSION = '1.1.7';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
+/* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
+   Left empty, WhatsApp opens with the message ready and asks whom to send it to */
+const FEEDBACK_PHONE = '';
 /* running inside the Android app, or in a browser; and in a browser, whether it was opened from the home screen */
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const STANDALONE = !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone);
@@ -574,6 +577,20 @@ function orderedScope() {
 }
 function freshList(n) { const out = []; for (const e of orderedScope()) { if (out.length >= n) break; if (!S.prog[pid(e)]) out.push(e); } return out; }
 function drillScope() { return SC.by === 'fav' || SC.by === 'miss'; }
+/* days in a row with the daily crossword solved, counting back from today, or from yesterday while today is still open */
+function dayOf(d) { return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
+function xwStreak() {
+  const days = new Set(S.settings.xwDays || []), d = new Date();
+  if (S.settings.xwDaily && S.settings.xwDaily.day) days.add(S.settings.xwDaily.day);   /* a day solved before the streak was kept */
+  if (!days.has(dayOf(d))) d.setDate(d.getDate() - 1);
+  let n = 0; while (days.has(dayOf(d))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+function dailyCardHtml() {
+  const day = localDay(), d = S.settings.xwDaily && S.settings.xwDaily.day === day ? S.settings.xwDaily : null, n = xwStreak();
+  return '<button class="dcard" id="dcard"><span class="dl"><b>תשחץ יומי</b><span>' + (d ? 'פתרת היום ב-' + mmss(d.secs) + ' ✓' : 'פתור עכשיו') + '</span></span>' +
+    '<span class="dr"><b>' + (n ? '🔥 ' + n : '🔥 0') + '</b><span>' + (n === 1 ? 'יום ברצף' : 'ימים ברצף') + '</span></span></button>';
+}
 function renderLearn() {
   const list = scopeItems(), st = stats(list), room = Math.max(0, S.settings.newPerDay - newToday());
   const seg = [['var(--soft)', st.fresh], ['var(--gold)', st.boxes[0] + st.boxes[1]], ['var(--brand)', st.boxes[2] + st.boxes[3]], ['var(--good)', st.boxes[4] + st.boxes[5] + st.boxes[6]]];
@@ -595,6 +612,7 @@ function renderLearn() {
       ? (SC.kind === 'concepts' ? 'המושגים החדשים מגיעים לפי סדר הדפים של המקור שלהם.' : 'המילים החדשות מגיעות לפי הדף שבו הן מופיעות לראשונה, מדף ב ועד דף קנז. מתאים למי שלומד את המסכת על הסדר.') + (SC.kind === 'both' ? ' המושגים משתלבים ביניהן לפי הדף של המקור שלהם.' : '')
       : (SC.kind === 'concepts' ? 'המושגים החדשים מגיעים נושא אחרי נושא, כסדר המילון.' : 'המילים החדשות מגיעות מהשכיחה ביותר במסכת ועד הנדירה. כך כל מילה שלומדים פותחת כמה שיותר שורות בגמרא.') + (SC.kind === 'both' ? ' אחרי כל שלוש מילים מגיע מושג אחד, כסדר המילון.' : '')) + '</p>' +
     '<p class="small muted">תשובה נכונה מרחיקה את החזרה הבאה: יום, שלושה ימים, שבוע, שבועיים, חודש וחודשיים. טעות מחזירה את הערך להתחלה.</p>');
+  view.insertAdjacentHTML('afterbegin', dailyCardHtml()); $('dcard').onclick = startXWDaily;
   view.insertAdjacentHTML('beforeend', installHtml()); bindInstall();
   $('go').onclick = () => startSession();
   $('sc-open').onclick = () => openScope(renderLearn);
@@ -1304,6 +1322,8 @@ function renderGameReview() {
    'dl' to the cell below and from there leftwards, 'ld' to the cell on its left and from there down.
    Letters are kept without final forms, so a final letter typed in the middle of a crossing word still counts */
 let xg = null;
+/* each board allows three hints (one letter each) and three error checks */
+const XW_HINTS = 3, XW_CHECKS = 3;
 const XN = 9;
 const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && short(e).length <= 34);
 const XW_RANK = new Map(XW_ALL.slice().sort((x, y) => y.c - x.c).map((e, i) => [e, i / Math.max(1, XW_ALL.length - 1)]));
@@ -1442,7 +1462,7 @@ const XKEY = 'aramit-shabbat-xw';
 function xwSave() {
   const g = xg; if (!g || g.type !== 'xw') return;
   const o = { v: 1, day: g.day || '', words: g.b.words.map(w => [w.e.i, w.t, w.clue]), typed: g.typed, hint: [...g.hint], bad: [...g.bad],
-    wrongW: [...g.wrongW], hintW: [...g.hintW], act: g.act, cur: g.cur, secs: g.secs || 0, open: !!g.open, done: !!g.done };
+    wrongW: [...g.wrongW], hintW: [...g.hintW], act: g.act, cur: g.cur, secs: g.secs || 0, checks: g.checks || 0, open: !!g.open, done: !!g.done };
   try { localStorage.setItem(XKEY, JSON.stringify(o)); } catch (e) { /* storage full or blocked */ }
 }
 function xwForget() { try { localStorage.removeItem(XKEY); } catch (e) { /* ignore */ } }
@@ -1465,7 +1485,7 @@ function xwLoad() {
     g.hint = new Set(o.hint || []); g.bad = new Set(o.bad || []); g.wrongW = new Set(o.wrongW || []); g.hintW = new Set(o.hintW || []);
     if (o.act >= 0 && o.act < words.length) g.act = o.act;
     if (words[g.act].cells.indexOf(o.cur) >= 0) g.cur = o.cur; else g.cur = words[g.act].cells[0];
-    g.secs = Math.max(0, o.secs | 0); g.day = o.day || ''; g.open = !!o.open;
+    g.secs = Math.max(0, o.secs | 0); g.day = o.day || ''; g.open = !!o.open; g.checks = Math.min(XW_CHECKS, Math.max(0, o.checks | 0));
     return g;
   } catch (e) { return null; }
 }
@@ -1475,7 +1495,7 @@ function mmss(n) { return two(Math.floor(n / 60)) + ':' + two(n % 60); }
 function xwTopHtml() {
   const day = localDay(), d = S.settings.xwDaily && S.settings.xwDaily.day === day ? S.settings.xwDaily : null, sv = xwLoad();
   const svDaily = sv && sv.day === day;
-  return '<button class="xdaily" id="xw-daily"><b>תשחץ יומי</b><span>' + (d ? 'פתרת היום ב-' + mmss(d.secs) + (d.hints ? ', עם ' + d.hints + ' רמזים' : ', בלי רמזים') + '. אפשר לפתור שוב.' : svDaily ? 'התחלת אותו היום. להמשיך מ-' + mmss(sv.secs) : 'אותו לוח לכל הישיבה, מכל המילים') + '</span></button>' +
+  return '<button class="xdaily" id="xw-daily"><b>תשחץ יומי</b><span>' + (d ? 'פתרת היום ב-' + mmss(d.secs) + xwAids(d.hints || 0, d.checks || 0) + '. אפשר לפתור שוב.' : svDaily ? 'התחלת אותו היום. להמשיך מ-' + mmss(sv.secs) : 'אותו לוח לכל הישיבה, מכל המילים') + '</span></button>' +
     (sv && !svDaily ? '<button class="btn ghost wide" id="xw-resume">המשך הלוח השמור (' + mmss(sv.secs) + ')</button>' : '');
 }
 /* the setup: where the words come from, and how hard they are */
@@ -1614,7 +1634,7 @@ function renderXW() {
   view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span><button class="link" id="xw-new">' + (g.day ? 'לוח אישי' : 'לוח חדש') + '</button> <button class="link" id="quit">סיום</button></span></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl"></div>' +
     '<div class="xlow"><div class="xbar" id="xw-bar" aria-live="polite"></div>' +
-    '<div class="xtools"><button id="xw-hint">💡 רמז</button><button id="xw-check">✓ בדיקה</button><button id="xw-clear">🗑️ ניקוי מילה</button></div>' +
+    '<div class="xtools"><button id="xw-hint"></button><button id="xw-check"></button><button id="xw-clear">ניקוי מילה 🗑️</button></div>' +
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
   xwPaint(); xwFit(); xwFitClues();
@@ -1651,6 +1671,9 @@ function xwPaint() {
   const g = xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
   $('xw-grid').innerHTML = xwBoardHtml();
   $('xw-bar').innerHTML = xwBarHtml();
+  const hl = XW_HINTS - g.hint.size, cl = XW_CHECKS - (g.checks || 0), hb = $('xw-hint'), cb = $('xw-check');
+  hb.textContent = 'רמז (' + hl + ') 💡'; hb.disabled = hl <= 0 || g.done;
+  cb.textContent = 'בדיקה (' + cl + ') ✓'; cb.disabled = cl <= 0 || g.done;
   xwFitClues();
   $('xw-left').textContent = (g.day ? 'יומי, ' : '') + g.b.words.length + ' מילים, ' + (left ? 'נשארו ' + left : 'הלוח מלא');
 }
@@ -1680,26 +1703,37 @@ function xwType(ch) {
   const k = w.cells[i];
   if (g.hint.has(k)) return;
   g.typed[k] = ch; g.bad.delete(k);
-  if (i < w.cells.length - 1) g.cur = w.cells[i + 1];
+  /* on to the next empty cell of the word, passing over letters a crossing word already put in */
+  const empty = j => !g.typed[w.cells[j]] && !g.hint.has(w.cells[j]);
+  let j = i + 1; while (j < w.cells.length && !empty(j)) j++;
+  if (j >= w.cells.length) { j = w.cells.findIndex((c, x) => x !== i && empty(x)); if (j < 0) j = Math.min(i + 1, w.cells.length - 1); }
+  g.cur = w.cells[j];
   xwPaint(); xwSave(); xwDone();
 }
+/* ⌫ deletes the letter under the cursor; on an empty cell it goes back and deletes the letter before.
+   Letters a hint revealed or that belong to a crossing word already solved are kept and passed over, as typing passes over them */
+function xwKeep(k) { const g = xg; return g.hint.has(k) || g.cw[k].some(i => i !== g.act && xwSolved(g.b.words[i])); }
 function xwDel() {
   const g = xg, k = g.cur;
   if (g.done) return;
-  if (g.typed[k] && !g.hint.has(k)) { g.typed[k] = ''; g.bad.delete(k); }
-  else { xwStep(-1); const p = g.cur; if (!g.hint.has(p)) { g.typed[p] = ''; g.bad.delete(p); } }
+  if (g.typed[k] && !xwKeep(k)) { g.typed[k] = ''; g.bad.delete(k); xwPaint(); xwSave(); return; }
+  const w = g.b.words[g.act];
+  let j = w.cells.indexOf(k) - 1;
+  while (j >= 0 && xwKeep(w.cells[j])) j--;
+  if (j >= 0) { const p = w.cells[j]; g.cur = p; g.typed[p] = ''; g.bad.delete(p); }
   xwPaint(); xwSave();
 }
-/* clear the letters of the active word, except those a hint revealed */
+/* clear the letters of the active word, except those a hint revealed and those shared with a crossing word already solved */
 function xwClear() {
   const g = xg; if (g.done) return;
   const w = g.b.words[g.act];
-  w.cells.forEach(k => { if (!g.hint.has(k)) { g.typed[k] = ''; g.bad.delete(k); } });
+  w.cells.forEach(k => { if (!xwKeep(k)) { g.typed[k] = ''; g.bad.delete(k); } });
   const free = w.cells.find(k => !g.hint.has(k)); g.cur = free !== undefined ? free : w.cells[0];
   xwPaint(); xwSave();
 }
 function xwHint() {
   if (xg.done) return;
+  if (xg.hint.size >= XW_HINTS) { toast('נוצלו כל ' + XW_HINTS + ' הרמזים של הלוח'); return; }
   const g = xg, w = g.b.words[g.act], ok = k => g.typed[k] && norm(g.typed[k]) === g.b.L[k];
   const k = !ok(g.cur) && w.cells.indexOf(g.cur) >= 0 ? g.cur : w.cells.find(c => !ok(c));
   if (k === undefined) { toast('המילה הזו כבר נכונה'); return; }
@@ -1707,8 +1741,10 @@ function xwHint() {
   xwPaint(); xwSave(); xwDone();
 }
 function xwCheck() {
-  const g = xg; let n = 0; g.checks++;
+  const g = xg; let n = 0;
   if (g.done) return;
+  if ((g.checks || 0) >= XW_CHECKS) { toast('נוצלו כל ' + XW_CHECKS + ' הבדיקות של הלוח'); return; }
+  g.checks = (g.checks || 0) + 1;
   g.b.L.forEach((ch, k) => { if (ch && g.typed[k] && norm(g.typed[k]) !== ch) { g.bad.add(k); n++; g.cw[k].forEach(i => g.wrongW.add(i)); } });
   g.wrongW.forEach(i => noteAnswer(g.b.words[i].e, false)); save();
   xwPaint(); xwSave();
@@ -1721,7 +1757,11 @@ function xwDone() {
   if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) { toast('הלוח מלא, אבל יש בו שגיאות. בדיקת שגיאות תסמן אותן'); return; }
   g.done = true; xwStopClock();
   g.mistakes = [...new Set([...g.wrongW, ...g.hintW])].map(i => ({ e: b.words[i].e, picked: null }));
-  if (g.day) { S.settings.xwDaily = { day: g.day, secs: g.secs, hints: g.hint.size }; save(); }
+  if (g.day) {
+    S.settings.xwDaily = { day: g.day, secs: g.secs, hints: g.hint.size, checks: g.checks || 0 };
+    const days = (S.settings.xwDays || []).filter(d => d !== g.day).concat([g.day]).sort().slice(-400);
+    S.settings.xwDays = days; save();
+  }
   xwForget(); xwPaint(); xwSummary();
 }
 function renderXWReview() {
@@ -1734,26 +1774,27 @@ function renderXWReview() {
 /* the summary: time, hints, every word with its meaning, and a result to share */
 function nWrongCells(n) { return n === 1 ? 'משבצת אחת שגויה' : n + ' משבצות שגויות'; }
 function xwWrong() { const g = xg; return g.b.L.reduce((n, ch, k) => n + (ch && g.typed[k] && norm(g.typed[k]) !== ch ? 1 : 0), 0); }
+/* "בלי רמזים ובדיקות", or the two counts in brackets */
+function xwAids(h, c) { return h || c ? ' (רמזים: ' + h + ', בדיקות: ' + c + ')' : ', בלי רמזים ובדיקות'; }
 function xwShareText() {
   const g = xg, h = g.hint.size, wrong = g.done ? 0 : xwWrong();
   const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
   return 'ארמית: מסכת שבת\n' + (g.day ? 'התשחץ היומי, ' + g.day.split('-').reverse().join('.') : 'תשחץ') + '\n' +
-    (g.done ? 'פתרתי ' : 'מילאתי ') + g.b.words.length + ' מילים ב-' + mmss(g.secs || 0) + ', ' + (h ? (h === 1 ? 'עם רמז אחד' : 'עם ' + h + ' רמזים') : 'בלי רמזים') +
+    (g.done ? 'פתרתי ' : 'מילאתי ') + g.b.words.length + ' מילים ב-' + mmss(g.secs || 0) + xwAids(h, g.checks || 0) +
     (wrong ? ', ' + nWrongCells(wrong) : '') + (link ? '\n' + link : '');
 }
 function xwSummary() {
-  const g = xg, n = (g.mistakes || []).length, wrong = g.done ? 0 : xwWrong(), h = g.hint.size;
+  const g = xg, wrong = g.done ? 0 : xwWrong(), h = g.hint.size;
   const words = g.b.words.slice().sort((x, y) => x.clue - y.clue);
   openSheet('<h2>' + (g.done ? (g.day ? 'פתרת את התשחץ היומי' : 'פתרת את הלוח') : 'הלוח מלא') + '</h2>' +
-    '<div class="stats"><div class="stat"><b>' + mmss(g.secs || 0) + '</b><span>זמן</span></div><div class="stat"><b>' + h + '</b><span>רמזים</span></div><div class="stat"><b>' + g.b.words.length + '</b><span>מילים</span></div></div>' +
+    '<div class="stats four"><div class="stat"><b>' + mmss(g.secs || 0) + '</b><span>זמן</span></div><div class="stat"><b>' + g.b.words.length + '</b><span>מילים</span></div><div class="stat"><b>' + h + '</b><span>רמזים</span></div><div class="stat"><b>' + (g.checks || 0) + '</b><span>בדיקות</span></div></div>' +
     (wrong ? '<p class="small strong">יש בלוח ' + nWrongCells(wrong) + '. בדיקת שגיאות תסמן ' + (wrong === 1 ? 'אותה' : 'אותן') + '.</p>' : '') +
     '<div class="review xwlist">' + words.map(w => '<div><b>' + esc(w.e.w) + '</b> <span>' + esc(gloss(w.e)) + '</span></div>').join('') + '</div>' +
-    (g.done ? '<button class="btn wide" id="xs-new">לוח חדש</button>' + (n ? '<button class="btn ghost wide" id="xs-mist">מעבר על הטעויות (' + n + ')</button>' : '') : '<button class="btn wide" id="xs-back">חזרה ללוח</button>') +
+    (g.done ? '<button class="btn wide" id="xs-new">לוח חדש</button>' : '<button class="btn wide" id="xs-back">חזרה ללוח</button>') +
     '<button class="btn line wide" id="xs-share">שתף תוצאה</button>' +
     '<button class="link" id="xs-close">' + (g.done ? 'סגירה' : 'יציאה מהלוח') + '</button>');
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('xs-new', () => { closeSheet(); startXW(); });
-  on('xs-mist', () => { closeSheet(); nav('xw', 'review'); });
   on('xs-back', closeSheet);
   on('xs-share', () => copyText(xwShareText()));
   on('xs-close', () => { closeSheet(); if (!g.done) goBack(); });
@@ -1793,10 +1834,20 @@ document.addEventListener('keydown', ev => {
 let sheetOpen = false;
 function openSheet(html, full) { $('sheet-host').innerHTML = '<div class="sheet' + (full ? ' full' : '') + '" id="sheet"><div>' + html + '</div></div>'; sheetOpen = true; if (!full) $('sheet').onclick = ev => { if (ev.target.id === 'sheet') closeSheet(); }; }
 function closeSheet() { $('sheet-host').innerHTML = ''; sheetOpen = false; }
-function applyLook() { document.documentElement.setAttribute('data-size', S.settings.size || 'm'); }
+function applyLook() {
+  document.documentElement.setAttribute('data-size', S.settings.size || 'm');
+  const dark = S.settings.theme === 'dark';
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const b = document.getElementById('btn-theme'); if (b) { b.textContent = dark ? '☀️' : '🌙'; b.setAttribute('aria-label', dark ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'); }
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', dark ? '#1b2436' : '#f4f6fa');
+}
 /* ---------- backup, restore and the daily reminder ---------- */
 function plug(name) {
   try { const c = window.Capacitor; if (!c || !c.isNativePlatform || !c.isNativePlatform()) return null; return (c.Plugins && c.Plugins[name]) || null; } catch (e) { return null; }
+}
+function feedbackUrl() {
+  const text = 'שלום, יש לי הערה על האפליקציה ארמית: מסכת שבת (גרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '):\n';
+  return 'https://wa.me/' + FEEDBACK_PHONE.replace(/\D/g, '') + '?text=' + encodeURIComponent(text);
 }
 function localDay() { const d = new Date(); return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
 function backupText() {
@@ -1893,6 +1944,7 @@ function openSettings(confirmReset) {
     '<p class="small muted">קובץ הגיבוי כולל את ההתקדמות, המועדפים, רשימת הטעויות, השיאים, ההגדרות והפירושים שערכת.</p>' +
     '<button class="link start" id="s-text">גיבוי ושחזור כטקסט</button></div>' +
     '<button class="btn line wide" id="s-help">איך לומדים באפליקציה</button>' +
+    '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '"' + (NATIVE ? '' : ' target="_blank" rel="noopener"') + '>דווח על טעות / הצע שיפור</a>' +
     (confirmReset
       ? '<div class="note">האיפוס ימחק את ההתקדמות ב־' + st.seen + ' ערכים, את המועדפים, את רשימת הטעויות, את השיאים ואת הפירושים שערכת. אי אפשר לבטל אותו.</div><div class="two"><button class="btn bad" id="s-reset-yes">למחוק הכול</button><button class="btn ghost" id="s-reset-no">ביטול</button></div>'
       : '<button class="btn line wide" id="s-reset">איפוס כל ההתקדמות</button>') +
@@ -1957,6 +2009,10 @@ function openOnboarding(step) {
 load(); applyLook(); restoreSc(); restoreTq(); restoreXw();
 document.querySelectorAll('#tabs button').forEach(b => { b.onclick = () => turnTo(b.dataset.tab); });
 $('btn-settings').onclick = () => openSettings();
+$('btn-theme').onclick = () => {
+  S.settings.theme = S.settings.theme === 'dark' ? 'light' : 'dark'; save(); applyLook();
+  if (R.tab === 'xw' && R.sub === 'board' && xg) { xg._fsAt = null; xwPaint(); }
+};
 try { history.replaceState(R, ''); } catch (e) { /* ignore */ }
 render();
 TABS.forEach(t => { if (t !== R.tab) paint(t); });

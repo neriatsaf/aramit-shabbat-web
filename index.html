@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1F3C6E">
 <title>ארמית: מסכת שבת</title>
+<meta name="theme-color" content="#f4f6fa">
+<script>/* the display mode before the first paint, so a light screen never flashes dark: light unless dark was chosen */
+try { var st = (JSON.parse(localStorage.getItem('aramit-shabbat-v1')) || {}).settings || {}; document.documentElement.setAttribute('data-theme', st.theme === 'dark' ? 'dark' : 'light'); } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }</script>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icons/favicon-48.png">
@@ -18,7 +21,7 @@
 <div id="app">
   <header class="top">
     <h1>ארמית: מסכת שבת<small id="subtitle"></small></h1>
-    <button class="iconbtn" id="btn-settings" aria-label="הגדרות">הגדרות</button>
+    <span class="topbtns"><button class="iconbtn" id="btn-theme" aria-label="מעבר למצב כהה">🌙</button><button class="iconbtn" id="btn-settings" aria-label="הגדרות">הגדרות</button></span>
   </header>
   <main id="rail-wrap" dir="ltr"><div id="rail" dir="ltr">
     <section class="panel" id="p-games" dir="rtl" aria-label="משחקים"></section>
