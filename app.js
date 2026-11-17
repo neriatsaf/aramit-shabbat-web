@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
@@ -598,9 +598,9 @@ function dailyCardHtml() {
   const ed = tb ? tb.ed : xwEdition(day);
   return '<div class="hub" id="hub"><p class="hubh">האתגרים של היום</p><div class="hubg">' +
     '<button class="hcard" id="h-xw"><b>תשחץ יומי #' + ed + '</b>' + (tb ? '<span class="ht">' + esc(tb.theme) + '</span>' : '') +
-      '<span class="hs' + (d ? ' ok' : '') + '">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf">🔥 ' + n + '</span></button>' +
+      '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + '</span></button>' +
     '<button class="hcard" id="h-wd"><b>וורדל מסכת שבת #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
-      '<span class="hs' + (wl && wl.won ? ' ok' : '') + '">' + (wl ? (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf">🔥 ' + wn + '</span></button>' +
+      '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + '</span></button>' +
     '</div></div>';
 }
 function renderLearn() {
@@ -1039,9 +1039,12 @@ function startQuiz(items, level, extra) {
   quiz = Object.assign({ kind: SC.kind, level, qs: items.map(e => makeQ(e, level, cpool && cpool.length ? cpool : null)), pos: 0, right: 0, wrong: [], stage: 'ask', picked: null }, extra || {});
   nav('quiz', 'run', R.tab === 'quiz' && R.sub === 'done');
 }
+/* from the whole store, the easy and middle levels ask only the chosen store (the common words); the expanded store,
+   rare words included, joins at the hard level */
+function quizItems() { const all = scopeItems(); return SC.by === 'all' && quizCfg.level !== 'hard' ? all.filter(e => e.cn || !e.ext) : all; }
 function renderQuizSetup() {
   if (quizCfg.mode === 'content' && CT.length) return renderTQSetup();
-  const src = scopeItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + quizCfg.level, b = S.best[key];
+  const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + quizCfg.level, b = S.best[key];
   const few = narrowed() && SC.kind !== 'words' && src.filter(e => e.cn).length < 4 && src.some(e => e.cn);
   view.innerHTML = '<h2>חידון אמריקאי</h2>' + modeSeg() + scopeHtml(true) +
     (few ? '<p class="small muted">בבחירה הזו יש פחות מארבעה מושגים, ולכן התשובות השגויות יושלמו משאר המילון, קודם מאותו נושא.</p>' : '') +
@@ -1055,7 +1058,7 @@ function renderQuizSetup() {
   bindSeg('qlevel', v => { quizCfg.level = v; renderQuizSetup(); });
   bindSeg('qlen', v => { quizCfg.len = +v; renderQuizSetup(); });
   const level = quizCfg.level, len = quizCfg.len;
-  const go = () => { const items = scopeItems(); if (!items.length) { toast('אין ערכים בבחירה הזו'); return; } startQuiz(sample(items, Math.min(len, items.length)), level, { bestKey: key, again: go }); };
+  const go = () => { const items = quizItems(); if (!items.length) { toast('אין ערכים בבחירה הזו'); return; } startQuiz(sample(items, Math.min(len, items.length)), level, { bestKey: key, again: go }); };
   $('qstart').onclick = go;
 }
 /* the short daily round that the reminder opens: ten entries, mistakes first, then what is due, then what was learned, then anything */
@@ -1234,8 +1237,9 @@ function renderGames() {
   $('g-wordle').onclick = startWordle;
 }
 function noteMistake(e, picked) { const g = game; g.mistakes = g.mistakes || []; if (!g.mistakes.some(m => m.e === e)) g.mistakes.push({ e, picked }); }
+/* the games keep moving: from the whole store they leave out the rare words */
 function gamePool(min) {
-  const src = pool(gameCfg.scope);
+  const src = pool(gameCfg.scope).filter(e => gameCfg.scope !== 'all' || !e.rare);
   if (src.length < min) { toast('אין מספיק מילים שלמדת למשחק הזה. צריך לפחות ' + min + ', או לבחור בכל המאגר'); return null; }
   return src;
 }
@@ -1372,8 +1376,11 @@ function renderGameReview() {
 let xg = null;
 /* a crossword entry may be a dictionary word or phrase, a concept, or one of the terms added for the daily board */
 const XE = ((window.DAILY && window.DAILY.extra) || []).map((x, i) => ({ xe: true, w: x[0], s: x[1], m0: x[2], i }));
-function xwEntry(src, i) { return src === 'c' ? CN[i] : src === 'x' ? XE[i] : D[i]; }
-function xwSrc(e) { return e.cn ? 'c' : e.xe ? 'x' : 'd'; }
+/* the crossword bank (bank.js): terms of the Torah world for the crosswords only, handled like the added terms:
+   a short definition for the cell, a full explanation for the summary, and no place in the dictionary, the learning or the Wordle */
+const BK = (window.BANK || []).map((r, i) => ({ xe: true, bk: true, w: r[0], t: r[1], s: r[2], m0: r[3], i }));
+function xwEntry(src, i) { return src === 'c' ? CN[i] : src === 'x' ? XE[i] : src === 'b' ? BK[i] : D[i]; }
+function xwSrc(e) { return e.cn ? 'c' : e.bk ? 'b' : e.xe ? 'x' : 'd'; }
 function xwLetters(s) { return String(s).replace(/[\u0591-\u05C7]/g, '').replace(/[^\u05d0-\u05ea]/g, ''); }
 function xwAns(e) { return norm(xwLetters(e.w)).split(''); }
 /* a phrase of several words gets its letter count per word, as in a printed crossword: (3, 2) */
@@ -1408,12 +1415,29 @@ function xwDailyBoard(day) {
 /* each board allows three hints (one letter each) and three error checks */
 const XW_HINTS = 3, XW_CHECKS = 3;
 const XN = 9;
+/* the answer must not show in its own definition: a whole word of the definition, once the prefixes ה ו ב ל כ מ ש
+   and the endings ים ות ין are taken off, may not be the answer (so "טל" is not caught by "טלטול"). The same rule as tools/make-daily.js */
+function answerInGloss(ans, text) {
+  const ENDS = ['ימ', 'ות', 'ינ'];   /* ים ות ין, with the final letters made plain */
+  const forms = t => { const out = new Set([t]); let x = t;
+    /* one prefix letter may leave two letters (הטל); two or three must leave three (מונח is not מ+ו+נח) */
+    for (let i = 0; i < 3 && /^[הובלכמש]/.test(x) && x.length > (i === 0 ? 2 : 3); i++) { x = x.slice(1); out.add(x); }
+    for (const v of [...out]) for (const end of ENDS) if (v.endsWith(end) && v.length - 2 >= 2) out.add(v.slice(0, -2));
+    const k = t.replace(/[וי]/g, ''); if (k.length >= 3) out.add('~' + k);   /* a spelling with or without ו and י */
+    return out; };
+  const words = String(ans).split(/\s+/).map(x => norm(xwLetters(x))).filter(w => w.length >= 2).map(w => {
+    const f = new Set([w]); for (const end of ENDS) if (w.endsWith(end) && w.length - 2 >= 2) f.add(w.slice(0, -2));
+    const k = w.replace(/[וי]/g, ''); if (k.length >= 3) f.add('~' + k); return f; });
+  const toks = (String(text).match(/[\u05d0-\u05ea]+/g) || []).map(norm);
+  return toks.some(t => { const f = forms(t); return words.some(ws => [...ws].some(w => f.has(w))); });
+}
 /* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
    The level ranks the chosen store by frequency, and every word of the expanded store counts as hard */
-const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && short(e).length <= 34);
-const XW_CORE = XW_ALL.filter(e => !e.ext);
+const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && short(e).length <= 34 && !answerInGloss(e.w, e.m0) && !(e.ext && /בעל כמה פירושים/.test(e.m0)));
+BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && e.s.length <= 40 && !answerInGloss(e.w, e.s)) XW_ALL.push(e); });
+const XW_CORE = XW_ALL.filter(e => !e.ext && !e.bk);
 const XW_RANK = new Map(XW_CORE.slice().sort((x, y) => y.c - x.c).map((e, i) => [e, i / Math.max(1, XW_CORE.length - 1)]));
-XW_ALL.forEach(e => { if (e.ext) XW_RANK.set(e, 1); });
+XW_ALL.forEach(e => { if (e.ext) XW_RANK.set(e, 1); else if (e.bk) XW_RANK.set(e, 0.5); });
 const XW_LV = { all: 'הכול', easy: 'קל', mid: 'בינוני', hard: 'קשה' };
 const xwCfg = { src: 'all', lv: 'all', pereks: [] };
 function restoreXw() {
@@ -1425,7 +1449,9 @@ function restoreXw() {
 function saveXw() { S.settings.xw = { src: xwCfg.src, lv: xwCfg.lv, pereks: xwCfg.pereks.slice() }; save(); }
 function xwLevelOk(e) { const r = XW_RANK.get(e); return xwCfg.lv === 'easy' ? r < 1 / 3 : xwCfg.lv === 'mid' ? r >= 1 / 3 && r < 2 / 3 : xwCfg.lv === 'hard' ? r >= 2 / 3 : true; }
 function xwSrcOk(e, k) {
-  if (e.ext && xwCfg.src !== 'pk') return false;
+  if (e.bk) return xwCfg.src === 'all';
+  if (e.ext && xwCfg.src === 'learned') return false;
+  if (e.ext && xwCfg.src === 'all' && xwCfg.lv !== 'hard') return false;
   if (xwCfg.src === 'learned') return !!S.prog[pid(e)];
   if (xwCfg.src === 'pk') return k === undefined ? (!xwCfg.pereks.length || xwCfg.pereks.some(p => e.pkm & (1 << p))) : !!(e.pkm & (1 << k));
   return true;
@@ -1581,6 +1607,7 @@ function xwTopHtml() {
   const svDaily = sv && sv.day === day && sv.b.anchor;
   const tb = xwDailyBoard(day);
   return '<button class="xdaily" id="xw-daily"><b>תשחץ יומי' + (tb ? ' #' + tb.ed : '') + '</b>' + (tb ? '<span>' + esc(tb.theme) + '</span>' : '') + '<span>' + (d ? 'פתרת היום ב-' + mmss(d.secs) + xwAids(d.hints || 0, d.checks || 0) + '. אפשר לפתור שוב.' : svDaily ? 'התחלת אותו היום. להמשיך מ-' + mmss(sv.secs) : 'אותו לוח לכל הישיבה') + '</span></button>' +
+    (d && tb ? '<button class="btn line wide" id="xw-dshare">שתף תוצאה</button>' : '') +
     (sv && !svDaily ? '<button class="btn ghost wide" id="xw-resume">המשך הלוח השמור (' + mmss(sv.secs) + ')</button>' : '');
 }
 /* the setup: where the words come from, and how hard they are */
@@ -1609,6 +1636,7 @@ function renderXWSetup() {
   }; });
   $('xw-go').onclick = () => startXW();
   $('xw-daily').onclick = startXWDaily;
+  const ds = $('xw-dshare'); if (ds) ds.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
   const rs = $('xw-resume'); if (rs) rs.onclick = () => { const sv = xwLoad(); if (sv) xwOpen(sv); else { toast('הלוח השמור לא נמצא'); renderXWSetup(); } };
 }
 const XW_MIN_POOL = 25;
@@ -1710,28 +1738,36 @@ function xwFitClues() {
     g._fs[wi] = fs;
   });
 }
+/* the live bar over the board: the definition of the selected word with its length (or the lengths of a phrase),
+   and beside it the word as typed so far, one element for each letter so the order never flips, with a gap between the
+   words of a phrase. A letter marked wrong by a check is red here too, and a tap on a letter moves the cursor to its cell */
 function xwBarHtml() {
-  const w = xg.b.words[xg.act];
-  return '<p><b>' + esc(xwDef(w.e)) + '</b> <span>(' + w.cells.length + ' אותיות, ' + XNAME[w.t] + ')</span></p>';
+  const g = xg, w = g.b.words[g.act], e = w.e;
+  const parts = e.w.trim().split(/\s+/).map(x => xwLetters(x).length).filter(n => n > 0);
+  const def = e.cn || e.xe ? e.s : gloss(e), len = parts.length > 1 ? parts.join(', ') : w.cells.length + ' אותיות';
+  let live = '', at = 0, gaps = new Set(); parts.slice(0, -1).forEach(n => { at += n; gaps.add(at); });
+  w.cells.forEach((k, i) => {
+    if (gaps.has(i)) live += '<i class="gap"></i>';
+    const ch = g.typed[k] ? (i === w.cells.length - 1 || gaps.has(i + 1) ? xwFinal(norm(g.typed[k])) : norm(g.typed[k])) : '_';
+    live += '<i data-k="' + k + '" class="' + (k === g.cur ? 'cur ' : '') + (g.bad.has(k) ? 'bad ' : '') + (g.hint.has(k) ? 'hint' : '') + '">' + esc(ch) + '</i>';
+  });
+  return '<p class="xdef"><b>' + esc(def) + '</b> <span>(' + len + ')</span></p><div class="xlive" dir="rtl">' + live + '</div>';
 }
-/* a long definition keeps its two lines over the keyboard: the type gets smaller until it fits, and only a definition that
-   still does not fit at the smallest size takes a third line, with the board made smaller to keep the keyboard in place */
+function xwFinal(ch) { return ({ 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' })[ch] || ch; }
+/* the bar keeps one height: a long definition takes smaller type until it fits its two lines, so the board never moves */
 function xwFitBar() {
-  const p = view.querySelector('#xw-bar p'); if (!p) return;
-  const three = !!(xg && xg.barL3);
+  const p = view.querySelector('#xw-bar .xdef'); if (!p) return;
   p.style.fontSize = '';
   let size = 0.98;
-  while (p.scrollHeight > p.clientHeight + 1 && size > 0.74) { size -= 0.04; p.style.fontSize = size.toFixed(2) + 'rem'; }
-  if (p.scrollHeight > p.clientHeight + 1) p.classList.add('l3');
-  if (xg) xg.barL3 = p.classList.contains('l3');
-  if (three !== p.classList.contains('l3') && $('xw-grid') && $('xw-grid').style.width) xwFit();
+  while (p.scrollHeight > p.clientHeight + 1 && size > 0.62) { size -= 0.04; p.style.fontSize = size.toFixed(2) + 'rem'; }
 }
 function renderXW() {
   const g = xg;
   view.className = 'panel tight';
   view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span><button class="link" id="xw-new">' + (g.day ? 'לוח אישי' : 'לוח חדש') + '</button> <button class="link" id="quit">סיום</button></span></div>' +
+    '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
-    '<div class="xlow"><div class="xbar" id="xw-bar" aria-live="polite"></div>' +
+    '<div class="xlow">' +
     '<div class="xtools"><button id="xw-hint"></button><button id="xw-check"></button><button id="xw-clear">ניקוי מילה 🗑️</button><button class="pin" id="xw-pin"></button></div>' +
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
@@ -1740,6 +1776,7 @@ function renderXW() {
   xwClock();
   $('quit').onclick = () => { if (g.b.L.every((ch, k) => !ch || g.typed[k])) xwSummary(); else goBack(); };
   $('xw-new').onclick = () => startXW();
+  $('xw-bar').onclick = ev => { const t = ev.target.closest('[data-k]'); if (!t || xg.done) return; xg.cur = +t.dataset.k; xwPaint(); xwSave(); };
   $('xw-grid').onclick = ev => { const t = ev.target.closest('[data-k]'), q = ev.target.closest('.xq'); if (t) xwTap(+t.dataset.k, q ? +q.dataset.wi : undefined); };
   view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => xwType(b.dataset.ch); });
   $('xw-del').onclick = xwDel;
@@ -1891,13 +1928,19 @@ function renderXWReview() {
   view.innerHTML = '<div class="row between"><h2>הטעויות בלוח</h2><button class="link" id="back">חזרה</button></div>' + reviewHtml(ms) +
     '<button class="btn wide" id="drill">חידון קצר על הטעויות האלה</button>';
   $('back').onclick = goBack;
-  $('drill').onclick = () => drillOn(ms.map(m => m.e));
+  $('drill').onclick = () => { const es = ms.map(m => m.e).filter(e => !e.xe); if (es.length) drillOn(es); else toast('בטעויות האלה אין מילים מהמילון לחידון'); };
 }
 /* the summary: time, hints, every word with its meaning, and a result to share */
 function nWrongCells(n) { return n === 1 ? 'משבצת אחת שגויה' : n + ' משבצות שגויות'; }
 function xwWrong() { const g = xg; return g.b.L.reduce((n, ch, k) => n + (ch && g.typed[k] && norm(g.typed[k]) !== ch ? 1 : 0), 0); }
 /* "בלי רמזים ובדיקות", or the two counts in brackets */
 function xwAids(h, c) { return h || c ? ' (רמזים: ' + h + ', בדיקות: ' + c + ')' : ', בלי רמזים ובדיקות'; }
+/* the result of the daily board, the same words the summary shares, from the record kept for the day */
+function dailyShareText(b, secs, hints, checks, day) {
+  const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
+  return 'ארמית: מסכת שבת\nתשחץ יומי #' + b.ed + ': ' + b.theme + ', ' + day.split('-').reverse().join('.') + '\n' +
+    'פתרתי ' + b.words.length + ' מילים ב-' + mmss(secs || 0) + xwAids(hints, checks) + (link ? '\n' + link : '');
+}
 function xwShareText() {
   const g = xg, h = g.hint.size, wrong = g.done ? 0 : xwWrong();
   const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
@@ -1994,6 +2037,7 @@ function wdToday() {
 }
 function wdSave() { try { localStorage.setItem(WKEY, JSON.stringify({ day: wd.day, ans: wd.ans, rows: wd.rows, hint: wd.hint, done: wd.done, won: wd.won })); } catch (x) { /* storage blocked */ } }
 function wdChapter(e) {
+  if (e.bk) return 'מושג יסוד: ' + ((window.BANK_TOPICS || [])[e.t] || '');
   if (e.xe) return 'מונח כללי בהלכות שבת, לא מפרק אחד';
   const k = e.cn ? e.pk : (Number.isInteger(e.pk) ? e.pk : pkOf(e.a));
   return 'פרק ' + ordPk(k) + ': ' + PEREKS[k][0];
@@ -2013,7 +2057,7 @@ function renderWordle() {
   g.rows.forEach(w => wdScore(w, g.ans).forEach((v, i) => { const c = w[i]; if (!st[c] || rank[v] > rank[st[c]]) st[c] = v; }));
   const keyCls = ch => { const v = st[norm(ch)]; return v ? ' class="k-' + v + '"' : ''; };
   const end = g.done ? wdEndHtml() : '';
-  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + '</b><span><button class="link" id="wd-hint"' + (g.hint || g.done ? ' disabled' : '') + '>רמז פרק 💡</button> <button class="link" id="quit">סיום</button></span></div>' +
+  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">סיום</button></span></div>' +
     (g.hint ? '<p class="small wclue">💡 ' + esc(wdChapter(g.e)) + '</p>' : '') +
     '<div class="wgrid" id="wd-grid" dir="rtl">' + rows.join('') + '</div>' + end +
     (g.done ? '' : '<div class="xlow"><div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
@@ -2171,8 +2215,29 @@ function openBackupText(msg) {
   $('bt-load').onclick = () => { const v = $('bt-in').value; if (!v.trim()) { toast('אין טקסט לייבא'); return; } importText(v); };
 }
 /* one local notification a day, at the chosen time. It needs no network, and a tap on it opens the short daily round */
+/* the web version: the hour is kept where the service worker can read it, and on a site added to the home screen
+   (Chrome on Android) the browser wakes the service worker now and then, which shows the reminder once a day after
+   the chosen hour. Returns true when set, false without permission, null where the browser cannot do it */
+async function webReminder(ask) {
+  if (NATIVE || !('serviceWorker' in navigator) || !('caches' in window)) return null;
+  try {
+    const r = S.settings.remind || { on: false, h: 20, m: 0 }, reg = await navigator.serviceWorker.ready;
+    const c = await caches.open('aramit-reminder'), url = new URL('reminder.json', reg.scope).href;
+    const old = await c.match(url).then(x => x ? x.json() : {}).catch(() => ({}));
+    await c.put(url, new Response(JSON.stringify({ on: !!r.on, h: r.h, m: r.m, last: old.last || '' }), { headers: { 'content-type': 'application/json' } }));
+    if (!r.on) { if (reg.periodicSync) await reg.periodicSync.unregister('aramit-reminder').catch(() => {}); return true; }
+    if (!('Notification' in window)) return null;
+    let perm = Notification.permission; if (perm !== 'granted' && ask) perm = await Notification.requestPermission();
+    if (perm !== 'granted') return false;
+    if (!reg.periodicSync) return null;
+    const st = navigator.permissions ? await navigator.permissions.query({ name: 'periodic-background-sync' }).catch(() => null) : null;
+    if (st && st.state !== 'granted') return null;
+    await reg.periodicSync.register('aramit-reminder', { minInterval: 4 * 3600 * 1000 });
+    return true;
+  } catch (e) { return null; }
+}
 async function syncReminder(ask) {
-  const LN = plug('LocalNotifications'); if (!LN) return null;
+  const LN = plug('LocalNotifications'); if (!LN) return webReminder(ask);
   try {
     await LN.cancel({ notifications: [{ id: 1 }] });
     const r = S.settings.remind; if (!r || !r.on) return true;
@@ -2193,7 +2258,7 @@ function openSettings(confirmReset) {
     '<div class="field"><span class="label">גודל הכתב</span><div class="seg" id="s-size"><button data-v="m" aria-pressed="' + (S.settings.size === 'm') + '">רגיל</button><button data-v="l" aria-pressed="' + (S.settings.size === 'l') + '">גדול</button><button data-v="xl" aria-pressed="' + (S.settings.size === 'xl') + '">גדול מאוד</button></div></div>' +
     '<div class="field"><span class="label">תזכורת יומית</span><div class="seg" id="s-rem"><button data-v="off" aria-pressed="' + !r.on + '">כבויה</button><button data-v="on" aria-pressed="' + !!r.on + '">פעילה</button></div>' +
     (r.on ? '<label for="s-time">באיזו שעה</label><input type="time" id="s-time" value="' + two(r.h) + ':' + two(r.m) + '">' : '') +
-    '<p class="small muted">התראה אחת ביום, "חזרה יומית: 10 מילים ומושגים". לחיצה עליה פותחת חידון קצר. היא פועלת בלי רשת.' + (native ? '' : ' התזכורת פועלת רק באפליקציה המותקנת.') + '</p>' +
+    '<p class="small muted">התראה אחת ביום, "חזרה יומית: 10 מילים ומושגים". לחיצה עליה פותחת חידון קצר. היא פועלת בלי רשת.' + (native ? '' : ' התזכורת פועלת כאשר האתר מוצמד למסך הבית (באנדרואיד).') + '</p>' +
     '<button class="link start" id="s-daily">לפתוח את החידון היומי עכשיו</button></div>' +
     '<div class="field"><span class="label">גיבוי ושחזור</span><div class="two"><button class="btn line" id="s-export">ייצוא גיבוי</button><button class="btn line" id="s-import">ייבוא גיבוי</button></div>' +
     '<input type="file" id="s-file" accept=".json,application/json,text/plain" hidden>' +
@@ -2206,6 +2271,7 @@ function openSettings(confirmReset) {
       : '<button class="btn line wide" id="s-reset">איפוס כל ההתקדמות</button>') +
     '<div class="stack small muted"><p><b>על האפליקציה</b></p>' +
     '<p>המאגר כולל ' + D.length + ' ערכים. ' + CORE_N + ' מהם הם המאגר הנבחר: מילים וביטויים בארמית שמופיעים בגמרא של מסכת שבת שלוש פעמים ומעלה, והספירה שלהם היא בגמרא בלבד. שאר ' + (D.length - CORE_N) + ' הערכים הם המאגר המורחב מכל 24 הפרקים: מילים ארמיות, פעלים, מונחים ושמות של חפצים וצמחים, מן המשנה ומן הגמרא, וביניהם ' + D.filter(e => e.rare).length + ' מילים נדירות שמופיעות פעם או פעמיים בלבד. מספר ההופעות נספר לפי צורת הכתיב, כולל אותיות השימוש.</p>' +
+    (BK.length ? '<p>בתשחץ, היומי והאישי, משולבים גם ' + BK.length + ' מושגי יסוד מעולם התורה, הש"ס, הראשונים והישיבות. הם לא חלק מן המילון של מסכת שבת ואינם נספרים בו.</p>' : '') +
     (CN.length ? '<p>מילון המושגים כולל ' + CN.length + ' מושגים מן המשנה ומן הגמרא. מראי המקום נבדקו מול נוסח המסכת, וההסברים קצרים ואינם תחליף ללימוד הסוגיה.</p>' : '') +
     '<p>הפירושים קצרים ונועדו לעזור בקריאה שוטפת. הם אינם תחליף לרש"י ולמפרשים, ובמילה שיש לה כמה מובנים ייתכן שהפירוש לא יתאים לכל מקום. אפשר לתקן כל פירוש במילון, והתיקון נשמר במכשיר שלך.</p>' +
     '<p>הספירה נעשתה על נוסח הגמרא שבספריא (מהדורת ויליאם דוידסון, קורן). הגופנים: פרנק ריהל ליברה ואסיסטנט, ברישיון פתוח (OFL).</p>' +
@@ -2216,7 +2282,7 @@ function openSettings(confirmReset) {
   bindSeg('s-size', v => { S.settings.size = v; save(); applyLook(); openSettings(); });
   bindSeg('s-rem', v => {
     const on = v === 'on'; S.settings.remind = { on, h: r.h, m: r.m }; save(); openSettings();
-    syncReminder(true).then(ok => { if (on && ok === false) { S.settings.remind.on = false; save(); toast('לא ניתנה הרשאה להתראות, ולכן התזכורת כבויה'); openSettings(); } else if (on && ok) toast('התזכורת נקבעה לשעה ' + two(r.h) + ':' + two(r.m)); });
+    syncReminder(true).then(ok => { if (on && ok === false) { S.settings.remind.on = false; save(); toast('לא ניתנה הרשאה להתראות, ולכן התזכורת כבויה'); openSettings(); } else if (on && ok) toast('התזכורת נקבעה לשעה ' + two(r.h) + ':' + two(r.m)); else if (on && ok === null) toast('בדפדפן הזה התזכורת לא תופיע. היא פועלת כשהאתר מוצמד למסך הבית באנדרואיד'); });
   });
   const tm = $('s-time'); if (tm) tm.onchange = () => {
     const mt = /^(\d{1,2}):(\d{2})/.exec(tm.value); if (!mt) return;
@@ -2275,7 +2341,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) openOnboarding(0);
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
 
 /* hardware back button inside the Android app */
 try {
@@ -2291,5 +2357,8 @@ try {
   const LN = plug('LocalNotifications');
   if (LN && LN.addListener) LN.addListener('localNotificationActionPerformed', () => { if (S.onboarded) startDaily(); });
   syncReminder(false);
+  /* the web reminder: a tap on it opens the app with ?daily, or sends a message to the app already open */
+  if (/[?&]daily\b/.test(location.search) && S.onboarded) startDaily();
+  if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', ev => { if (ev.data && ev.data.daily && S.onboarded) startDaily(); });
 } catch (e) { /* no notifications here */ }
 })();
