@@ -195,8 +195,8 @@ h3{font-family:var(--f-word);font-weight:700;font-size:1.05rem;margin:14px 0 0}
 .qtext{font-size:1.14rem;font-weight:600;line-height:1.5;text-align:start;width:100%;margin:0;overflow-wrap:anywhere}
 .quote{font-family:var(--f-word);font-size:1.08rem;line-height:1.65;margin:0;overflow-wrap:anywhere}
 /* arrow crossword, in plain colours: a light board in light mode, a soft dark one in dark mode */
-:root{--xanchor:#D4A84F;--xframe:#94A3B8;--xgap:#CBD5E1;--xv:#A3AEC0;--xl:#FFFFFF;--xlb:#CBD5E1;--xlt:#0F172A;--xon:#BFDBFE;--xcur:#FDE68A;--xcurb:#D97706;--xbad:#FECACA;--xbadt:#B91C1C;--xhint:#1D4ED8;--xk:#DBEAFE;--xkt:#1E3A8A;--xka:#1E3A8A;--xksep:#93C5FD;--xok:#16A34A}
-:root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#141C2C;--xgap:#141C2C;--xv:#141C2C;--xl:#33415C;--xlb:#5C6F94;--xlt:#F1F5F9;--xon:#46639A;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A30;--xbadt:#FFC9C9;--xhint:#9CC8FF;--xk:#285596;--xkt:#E6EEFB;--xka:#FFFFFF;--xksep:#5C84C4;--xok:#4ADE80}
+:root{--xanchor:#D4A84F;--xframe:#94A3B8;--xgap:#CBD5E1;--xv:#A3AEC0;--xl:#FFFFFF;--xlb:#CBD5E1;--xlt:#0F172A;--xon:#BFDBFE;--xcur:#FDE68A;--xcurb:#D97706;--xbad:#FECACA;--xbadt:#B91C1C;--xhint:#1D4ED8;--xk:#DBEAFE;--xkt:#1E3A8A;--xka:#1E3A8A;--xksep:#93C5FD;--xok:#16A34A;--xsol:#ECF7EF}
+:root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#141C2C;--xgap:#141C2C;--xv:#141C2C;--xl:#33415C;--xlb:#5C6F94;--xlt:#F1F5F9;--xon:#46639A;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A30;--xbadt:#FFC9C9;--xhint:#9CC8FF;--xk:#285596;--xkt:#E6EEFB;--xka:#FFFFFF;--xksep:#5C84C4;--xok:#4ADE80;--xsol:#2D4A55}
 .panel.tight{padding-top:6px;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));overflow:hidden}
 body.xwmode .top{display:none}
 .xw>.row .link{min-height:34px;padding:4px 6px}
@@ -207,6 +207,7 @@ body.xwmode .top{display:none}
 .xgrid{display:grid;gap:2px;background:transparent;border:0;border-radius:6px;overflow:hidden;flex-shrink:0}
 .xgrid>*{border:0;margin:0;padding:0;min-width:0;min-height:0;position:relative;font:inherit;overflow:hidden;border-radius:1px}
 .cell-letter{background:var(--xl);color:var(--xlt);box-shadow:inset 0 0 0 1px var(--xlb);font-family:var(--f-word);font-weight:700;font-size:min(5.2vw,1.35rem);display:flex;align-items:center;justify-content:center}
+.cell-letter.sol{background:var(--xsol)}
 .cell-letter.on{background:var(--xon)}
 .cell-letter.cur{background:var(--xcur);box-shadow:inset 0 0 0 2px var(--xcurb)}
 .cell-letter.bad{background:var(--xbad);color:var(--xbadt)}
@@ -219,7 +220,8 @@ body.xwmode .top{display:none}
 .cell-letter.lock{font-weight:900}
 .cell-clue{background:var(--xk);color:var(--xkt);display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);text-align:center;justify-items:stretch;align-items:stretch}
 .cell-clue.two{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
-.cell-clue.kon::after{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 2px var(--xcurb);pointer-events:none;z-index:1}
+/* the definition of the current word: the gold frame goes around its own half, not the whole cell */
+.xq.sel::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 2px var(--xcurb);pointer-events:none;z-index:1}
 .xq{min-height:0;min-width:0;width:100%;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;padding:1px 2px}
 .xq.side-l{padding-left:12px}
 .cell-clue:not(.two) .xq.side-b{padding-bottom:11px}

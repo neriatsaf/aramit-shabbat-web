@@ -634,7 +634,7 @@ function dailyCardHtml() {
       '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + ' <em>🛡️ ' + xi.shields + '/2</em></span></button>' +
     '<button class="hcard" id="h-wd"><b>וורדל מסכת שבת #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
       '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + ' <em>🛡️ ' + wi.shields + '/2</em></span></button>' +
-    '</div><div class="hubx"><button class="hlink" id="h-arch">ארכיון 📅</button>' + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
+    '</div><div class="hubx">' + (ed > 1 ? '<button class="hlink" id="h-arch">ארכיון 📅</button>' : '') + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
 }
 /* where the learner holds in the tractate: a page range (מדף עד דף) chosen in "מה מתרגלים" or in the quiz.
    It filters the daily learning, the quiz and the personal crossword; "+ דף" moves the last page on by one */
@@ -674,7 +674,8 @@ function renderLearn() {
     (drill ? '<p class="note">' + (SC.by === 'fav' ? 'תרגול של הערכים שסימנת בכוכב.' : 'תרגול של הערכים שטעית בהם. ערך יוצא מהרשימה אחרי שתי תשובות נכונות ברצף.') + ' תשובה נכונה כאן לא משנה את לוח החזרות, וטעות מחזירה את הערך להתחלה.</p>' :
     '<p class="small muted">תשובה נכונה מרחיקה את החזרה הבאה: יום, שלושה ימים, שבוע, שבועיים, חודש וחודשיים. טעות מחזירה את הערך להתחלה.</p>');
   view.insertAdjacentHTML('afterbegin', dailyCardHtml() + holdHtml()); $('h-xw').onclick = startXWDaily; $('h-wd').onclick = startWordle;
-  $('h-arch').onclick = openArchive;
+  /* on the first day there is nothing in the archive yet */
+  if ($('h-arch')) $('h-arch').onclick = openArchive;
   const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
   const hp = $('hold-plus'); if (hp) hp.onclick = () => { if (SC.d1 < 157) { SC.d1++; saveSc(); render(false); toast('אוחז עד דף ' + hebNum(SC.d1)); } };
   const ho = $('hold-open'); if (ho) ho.onclick = openPrep;
@@ -1499,9 +1500,14 @@ function xwFromRefs(R, C, refs) {
   }
   return { R, C, L, K, words };
 }
-/* the daily board: the prepared board for today's edition. Edition 1 is the first day of the file; after the last board it starts over */
+/* the daily board: the prepared board for today's edition; after the last board it starts over.
+   The site opens to the yeshiva on LAUNCH: from that day the count starts again at #1, with the first board and the first
+   Wordle word of the file. The days before it keep the count of the file (DAILY.epoch), so the boards already played stay
+   as they were. The file of the boards itself does not change */
+const LAUNCH = '2026-11-22';
+function xwEpoch(day) { const ep = (window.DAILY && window.DAILY.epoch) || day; return day >= LAUNCH ? LAUNCH : ep; }
 function xwEdition(day) {
-  const ep = (window.DAILY && window.DAILY.epoch) || day, ms = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
+  const ep = xwEpoch(day), ms = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
   return Math.max(1, Math.round((ms(day) - ms(ep)) / 86400000) + 1);
 }
 function xwDailyBoard(day) {
@@ -1772,7 +1778,7 @@ function xwStale() { return !!(xg && xg.type === 'xw' && xg.day && xg.b.anchor &
 function openArchive() {
   const day = localDay(), ed = xwEdition(day), arch = S.settings.arch || { xw: {}, wd: {} }, rows = [];
   for (let n = ed - 1; n >= 1; n--) {
-    const d = new Date(window.DAILY.epoch + 'T12:00:00'); d.setDate(d.getDate() + n - 1);
+    const d = new Date(xwEpoch(day) + 'T12:00:00'); d.setDate(d.getDate() + n - 1);
     const dd = dayOf(d), b = xwDailyBoard(dd);
     rows.push('<div class="arow"><div><b>#' + n + '</b> <span class="small muted">' + dd.split('-').reverse().join('.') + '</span><br><span class="small">' + esc(b ? b.theme : '') + '</span></div>' +
       '<button class="btn line" data-axw="' + dd + '">תשחץ' + (arch.xw[n] ? ' ✓' : '') + '</button><button class="btn line" data-awd="' + dd + '">וורדל' + (arch.wd[n] ? ' ✓' : '') + '</button></div>');
@@ -1832,7 +1838,8 @@ function xwBoardHtml() {
   for (let r = 0; r < b.R; r++) for (let c = 0; c < b.C; c++) {
     const k = r * b.C + c;
     if (b.L[k]) {
-      const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (anchor.has(k) ? ' anchor' : '') + (xwLocked(k) ? ' lock' : '');
+      const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (anchor.has(k) ? ' anchor' : '') + (xwLocked(k) ? ' lock' : '') +
+        (g.cw[k].some(i => xwSolved(b.words[i])) ? ' sol' : '');   /* a letter of a solved word: a slightly different shade */
       h += '<button class="' + cls + '" data-k="' + k + '" aria-label="משבצת">' + esc(norm(g.typed[k])) + '</button>';
     } else if (b.K[k]) {
       const ks = b.K[k].slice().sort((x, y) => (XLEFT[y.t] ? 1 : 0) - (XLEFT[x.t] ? 1 : 0)), two = ks.length > 1;
@@ -1919,7 +1926,7 @@ function xwFitBar() {
 function renderXW() {
   const g = xg;
   view.className = 'panel tight';
-  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
+  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day || g.arch ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
     '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
     '<div class="xlow">' +
@@ -1998,6 +2005,7 @@ function xwPaint() {
 }
 /* a tap on a definition selects the word of the half that was touched; a tap elsewhere in the cell moves between its words */
 function xwTap(k, wi) {
+  if (xg) xg._tp = null;   /* a tap, a deletion or a cleared word starts the typing point again from the cursor */
   const g = xg, b = g.b;
   if (b.K[k]) {
     const ks = b.K[k], i = ks.findIndex(x => x.wi === g.act);
@@ -2039,11 +2047,14 @@ function xwType(ch) {
     g._tp = { act: g.act, cur: g.cur, i: tp + 1 };
     xwPaint(); xwSave(); return;
   }
-  /* past the end of the word (its last cell was just typed) the cursor decides, as before */
+  /* the letter goes into the first free cell from the typing point on. When there is none from there to the end (the free
+     cells of the word lie before it), it goes into the cursor's cell, or else the first free cell of the word. Only a word with
+     no free cell at all is solved, and only then does the key do nothing */
   let i = tp >= 0 && tp < w.cells.length ? tp : Math.max(0, w.cells.indexOf(g.cur));
-  while (i < w.cells.length - 1 && xwLocked(w.cells[i])) i++;
+  while (i < w.cells.length && xwLocked(w.cells[i])) i++;
+  if (i >= w.cells.length) { const c = w.cells.indexOf(g.cur); i = c >= 0 && !xwLocked(g.cur) ? c : w.cells.findIndex(x => !xwLocked(x)); }
+  if (i < 0) { toast('המילה הזו כבר נפתרה'); return; }
   const k = w.cells[i];
-  if (xwLocked(k)) { toast('המילה הזו כבר נפתרה'); return; }
   g.typed[k] = ch; g.bad.delete(k); xwNoteWrong(k);
   /* on to the next empty cell of the word, passing over letters already in place and locked cells */
   const empty = j => !g.typed[w.cells[j]] && !xwLocked(w.cells[j]);
@@ -2073,6 +2084,7 @@ function xwNextOpen() {
 function xwLocked(k) { const g = xg; return g.hint.has(k) || g.cw[k].some(i => xwSolved(g.b.words[i])); }
 function xwKeep(k) { return xwLocked(k); }
 function xwDel() {
+  if (xg) xg._tp = null;   /* a tap, a deletion or a cleared word starts the typing point again from the cursor */
   const g = xg, k = g.cur;
   if (g.done) return;
   if (g.typed[k] && !xwKeep(k)) { g.typed[k] = ''; g.bad.delete(k); xwPaint(); xwSave(); return; }
@@ -2084,6 +2096,7 @@ function xwDel() {
 }
 /* clear the letters of the active word, except those a hint revealed and those shared with a crossing word already solved */
 function xwClear() {
+  if (xg) xg._tp = null;   /* a tap, a deletion or a cleared word starts the typing point again from the cursor */
   const g = xg; if (g.done) return;
   const w = g.b.words[g.act];
   w.cells.forEach(k => { if (!xwKeep(k)) { g.typed[k] = ''; g.bad.delete(k); } });
@@ -2660,7 +2673,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()) };
 
 /* hardware back button inside the Android app */
 try {
