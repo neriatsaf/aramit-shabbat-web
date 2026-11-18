@@ -1918,33 +1918,35 @@ function xwFitBar() {
 function renderXW() {
   const g = xg;
   view.className = 'panel tight';
-  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span><button class="link" id="xw-new">' + (g.day ? 'לוח אישי' : 'לוח חדש') + '</button> <button class="link" id="quit">סיום</button></span></div>' +
+  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">סיום</button></span></div>' +
     '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
     '<div class="xlow">' +
     '<div class="xtools"><button id="xw-hint"></button><button id="xw-clear">ניקוי מילה 🗑️</button><button class="pin" id="xw-pin"></button></div>' +
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
-  xwPaint(); xwFit(); xwFitClues();
+  xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350);
   g.open = true; xwSave();
   xwClock();
   $('quit').onclick = () => { if (g.b.L.every((ch, k) => !ch || g.typed[k])) xwSummary(); else goBack(); };
-  $('xw-new').onclick = () => startXW();
+  /* a personal board offers a new one; the daily board does not lead away to a personal one */
+  if ($('xw-new')) $('xw-new').onclick = () => startXW();
   $('xw-bar').onclick = ev => { const t = ev.target.closest('[data-k]'); if (!t || xg.done) return; xg.cur = +t.dataset.k; xwPaint(); xwSave(); };
   $('xw-grid').onclick = ev => { const t = ev.target.closest('[data-k]'), q = ev.target.closest('.xq'); if (t) xwTap(+t.dataset.k, q ? +q.dataset.wi : undefined); };
   view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => xwType(b.dataset.ch); });
   $('xw-del').onclick = xwDel;
   $('xw-hint').onclick = xwHint;
   $('xw-clear').onclick = xwClear;
-  $('xw-pin').onclick = () => { S.settings.xwPin = !S.settings.xwPin; save(); xwPaint(); };
+  /* the pin belongs to the board in hand and is not kept: every board opens with it off */
+  $('xw-pin').onclick = () => { g.pin = !g.pin; xwPaint(); };
 }
 /* the board takes whatever height is left once the definition bar and the keyboard are in place */
 /* the board takes the width; the block under it (definition bar, tools, keyboard) sits on the bottom edge with no gaps,
-   and whatever height is left over makes the keys taller, from 44 up to 52 pixels */
-function xwFit() {
+   and whatever height is left over makes the keys taller, from 44 up to 58 pixels */
+function xwFit(depth) {
   const grid = $('xw-grid'); if (!grid) return;
   /* keep the keyboard just above the tab bar, whatever height the bar has on this device */
-  const tabs = document.getElementById('tabs'); if (tabs) view.style.paddingBottom = (tabs.offsetHeight + 4) + 'px';
+  const tabs = document.getElementById('tabs'); if (tabs && !depth) view.style.paddingBottom = (tabs.offsetHeight + 4) + 'px';
   const kb = view.querySelector('.xkb'); kb.style.setProperty('--kh', '44px');
   const box = view.querySelector('.xw'), cs = getComputedStyle(view), gap = parseFloat(getComputedStyle(box).rowGap) || 0;
   let others = 0, n = 0;
@@ -1952,16 +1954,24 @@ function xwFit() {
   const free = view.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - others - gap * n - 2;
   /* square cells: as large as the width and the free height allow for this board's columns and rows */
   const R = xg.b.R, C = xg.b.C, wide = view.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const cell = Math.max(24, Math.min(wide / C, free / R, 56));
+  const cell = Math.max(24, Math.min(wide / C, free / R, 72));
   grid.style.width = Math.floor(cell * C) + 'px'; grid.style.height = Math.floor(cell * R) + 'px';
   const spare = free - Math.floor(cell * R);
-  if (spare > 0) kb.style.setProperty('--kh', Math.min(52, 44 + spare / 3).toFixed(1) + 'px');
-  /* the keyboard must end above the tab bar: whatever still overflows comes off the board */
-  if (tabs) {
-    const over = kb.getBoundingClientRect().bottom - tabs.getBoundingClientRect().top + 2;
-    if (over > 0) { kb.style.setProperty('--kh', '44px'); const c2 = Math.max(20, cell - Math.max(over, kb.getBoundingClientRect().bottom - tabs.getBoundingClientRect().top + 2) / R); grid.style.width = Math.floor(c2 * C) + 'px'; grid.style.height = Math.floor(c2 * R) + 'px'; }
+  if (spare > 0) kb.style.setProperty('--kh', Math.min(58, 44 + spare / 3).toFixed(1) + 'px');
+  /* the keyboard must end above the tab bar. The board is centred in its column, so making it smaller does not lift the
+     keyboard: the column itself is cut by the overlap (on some phones the page reaches under the tab bar), and the board
+     is sized again for the room that is left */
+  if (tabs && !depth) {
+    const over = kb.getBoundingClientRect().bottom - tabs.getBoundingClientRect().top + 4;
+    if (over > 0) { view.style.paddingBottom = (parseFloat(view.style.paddingBottom) + over) + 'px'; xwFit(1); }
   }
 }
+/* fonts that arrive late, the address bar or the system bar of the phone change the height after the first layout */
+function xwRefit() { if (R.tab === 'xw' && R.sub === 'board' && xg && xg.type === 'xw' && $('xw-grid')) { xwFit(); xwFitClues(); } }
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(xwRefit);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', xwRefit);
+/* the tab bar can grow after the board is laid out (the system bar of the phone, a font that arrives late) */
+if (window.ResizeObserver) { const tb = document.getElementById('tabs'); if (tb) new ResizeObserver(() => xwRefit()).observe(tb, { box: 'border-box' }); }
 window.addEventListener('resize', () => { if (R.tab === 'xw' && R.sub === 'board' && xg && xg.type === 'xw') { xwFit(); xwFitClues(); } });
 function xwPaint() {
   const g = xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
@@ -1969,7 +1979,7 @@ function xwPaint() {
   $('xw-bar').innerHTML = xwBarHtml(); xwFitBar();
   const hl = XW_HINTS - g.hint.size, hb = $('xw-hint');
   hb.textContent = 'רמז (' + hl + ') 💡'; hb.disabled = hl <= 0 || g.done;
-  const pb = $('xw-pin'), pin = !!S.settings.xwPin;
+  const pb = $('xw-pin'), pin = !!g.pin;
   pb.innerHTML = pin ? XLOCK.on : XLOCK.off; pb.classList.toggle('on', pin); pb.setAttribute('aria-pressed', String(pin));
   pb.setAttribute('aria-label', pin ? 'הסמן נעול במשבצת: הקלדה מחליפה את האות בלי להתקדם' : 'נעילת הסמן במשבצת');
   xwFitClues();
@@ -2003,7 +2013,7 @@ function xwType(ch) {
   const g = xg, w = g.b.words[g.act];
   if (g.done) return;
   /* with the pin on, the letter replaces the one under the cursor and the cursor stays */
-  if (S.settings.xwPin) {
+  if (g.pin) {
     if (xwLocked(g.cur)) { toast('המשבצת נעולה: היא שייכת למילה שנפתרה או לרמז'); return; }
     g.typed[g.cur] = ch; g.bad.delete(g.cur); if (xwSolved(w)) xwNextOpen(); xwPaint(); xwSave(); xwDone(); return;
   }
