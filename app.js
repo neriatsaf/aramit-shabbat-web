@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.5.1';
+const VERSION = '1.5.2';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
@@ -161,19 +161,22 @@ function stats(list) {
   list.forEach(e => { const p = S.prog[pid(e)]; if (!p) { fresh++; return; } boxes[Math.min(p.b, 6)]++; if (p.b >= KNOWN_BOX) learned++; if (p.d <= t) due++; });
   return { total: list.length, due, learned, fresh, boxes, seen: list.length - fresh };
 }
-function newToday() { const t = today(); let n = 0; for (const k in S.prog) if (S.prog[k].f === t) n++; return n; }
+/* new entries begun today; one marked "כבר מכיר" (k) does not use up a place */
+function newToday() { const t = today(); let n = 0; for (const k in S.prog) if (S.prog[k].f === t && !S.prog[k].k) n++; return n; }
 /* r counts the rounds in a row (one a day at most) in which the entry was remembered; at three it becomes known
-   and leaves the daily reviews. A miss sets the count back to zero */
+   and leaves the daily reviews, provided one of them was a free recall (fr: the card turned over, not four answers to pick from).
+   A miss sets the count back to zero */
 const KNOWN_RUN = 3;
-function grade(e, ok) {
+function grade(e, ok, recall) {
   const k = pid(e), t = today(); const p = S.prog[k] || { b: 0, d: t, n: 0, x: 0, f: t };
   p.n++;
   if (ok) {
     p.b = Math.min(p.b + 1, 6); p.d = t + INTERVALS[p.b];
     if (p.rd !== t) { p.r = (p.r || 0) + 1; p.rd = t; }
-    if (p.r >= KNOWN_RUN && p.b < KNOWN_BOX) { p.b = KNOWN_BOX; p.d = t + INTERVALS[KNOWN_BOX]; }
+    if (recall) p.fr = 1;
+    if (p.r >= KNOWN_RUN && p.fr && p.b < KNOWN_BOX) { p.b = KNOWN_BOX; p.d = t + INTERVALS[KNOWN_BOX]; }
   }
-  else { p.x++; p.b = Math.max(0, Math.min(p.b, 1) - 1); p.d = t; p.r = 0; p.rd = t; }
+  else { p.x++; p.b = Math.max(0, Math.min(p.b, 1) - 1); p.d = t; p.r = 0; p.rd = t; delete p.fr; }
   S.prog[k] = p; save();
 }
 function markKnown(e) { const t = today(); S.prog[pid(e)] = { b: KNOWN_BOX, d: t + INTERVALS[KNOWN_BOX], n: 1, x: 0, f: t, k: 1 }; save(); }
@@ -649,7 +652,9 @@ function openPrep() {
     '<p class="small muted">מה שמופיע לראשונה במסכת בדף ' + esc(gem(d)) + ': ' + ws.length + ' מילים וביטויים' + (cs.length ? ' ו-' + cs.length + ' מושגים' : '') + '.</p>' +
     (cs.length ? '<h3>מושגים</h3><div class="review prep">' + cs.map(row).join('') + '</div>' : '') +
     (ws.length ? '<h3>מילים וביטויים</h3><div class="review prep">' + ws.map(row).join('') + '</div>' : '<p>בדף הזה אין מילים חדשות.</p>') +
+    ((ws.length || cs.length) ? '<button class="btn wide" id="pr-go">תרגול מילות הדף (' + (ws.length + cs.length) + ')</button>' : '') +
     '<button class="btn line wide" id="pr-scope">שינוי הטווח</button>');
+  const pg = $('pr-go'); if (pg) pg.onclick = () => { closeSheet(); startSession('prep', cs.concat(ws).map(e => ({ e, isNew: !S.prog[pid(e)] }))); };
   $('pr-close').onclick = closeSheet;
   $('pr-scope').onclick = () => { closeSheet(); openScope(renderLearn); };
 }
@@ -673,7 +678,7 @@ function renderLearn() {
   const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
   const hp = $('hold-plus'); if (hp) hp.onclick = () => { if (SC.d1 < 157) { SC.d1++; saveSc(); render(false); toast('אוחז עד דף ' + hebNum(SC.d1)); } };
   const ho = $('hold-open'); if (ho) ho.onclick = openPrep;
-  shieldNotice();
+  shieldNotice(); backupNote();
   view.insertAdjacentHTML('beforeend', installHtml()); bindInstall();
   $('go').onclick = () => startSession();
   $('sc-open').onclick = () => openScope(renderLearn);
@@ -690,14 +695,14 @@ function buildQueue(kind) {
   const room = Math.max(0, S.settings.newPerDay - newToday());
   return shuffle(list.filter(isDue)).map(e => ({ e, isNew: false })).concat(freshList(room).map(e => ({ e, isNew: true })));
 }
-function startSession(kind) {
-  const q = buildQueue(kind);
+function startSession(kind, list) {
+  const q = list || buildQueue(kind);
   if (!q.length) {
     if (kind) { toast(kind === 'free' ? 'עוד לא למדת ערכים מהבחירה הזו' : 'כל הערכים בבחירה הזו כבר נלמדו'); return; }
     if (drillScope()) { toast('הרשימה ריקה'); return; }
     nav('learn', 'more', R.sub === 'done' || R.sub === 'review'); return;
   }
-  session = { kind: kind || (drillScope() ? 'free' : 'due'), queue: q, pos: 0, right: 0, wrong: 0, stage: 'ask', picked: null, mode: null, q: null, missed: [], review: null };
+  session = { kind: kind || (drillScope() ? 'free' : 'due'), queue: q, pos: 0, right: 0, wrong: 0, stage: 'ask', picked: null, mode: null, q: null, missed: [], review: null, list: list ? list.map(x => x.e) : null };
   nav('learn', 'session', R.sub === 'more' || R.sub === 'done' || R.sub === 'review');
 }
 function renderMore() {
@@ -756,7 +761,7 @@ function renderSession() {
     '<p class="small muted center swtip">החלקה ימינה: זוכר. שמאלה: לחזרה. למעלה: כבר מכיר</p>';
   $('quit').onclick = () => nav('learn', 'done', true);
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
-  on('known', () => { markKnown(e); advance(); });
+  on('known', () => { markKnown(e); if (item.isNew) topUpNew(); advance(); });
   on('learn', () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); });
   on('show', () => { s.stage = 'shown'; renderSession(); });
   on('yes', () => { apply(item, true); advance(); });
@@ -766,7 +771,7 @@ function renderSession() {
   /* the card follows the thumb. Right: remembered; left: back for review; up: already known. A question with four answers
      takes only the upward gesture, and one already answered takes none */
   const acts = {
-    known: () => { markKnown(e); advance(); },
+    known: () => { markKnown(e); if (item.isNew) topUpNew(); advance(); },
     yes: m.type === 'intro' ? () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); } : m.type === 'flip' ? () => { apply(item, true); advance(); } : null,
     no: m.type === 'intro' ? () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); } : m.type === 'flip' ? () => { apply(item, false); advance(); } : null
   };
@@ -794,10 +799,16 @@ function cardSwipe(card, acts) {
   };
   card.addEventListener('touchend', end); card.addEventListener('touchcancel', end);
 }
+/* a new entry marked "כבר מכיר" in a round of the day: the next new entry of the order joins the end of the round */
+function topUpNew() {
+  const s = session; if (!s || s.kind === 'free' || s.kind === 'prep' || drillScope()) return;
+  const inQ = new Set(s.queue.map(x => x.e)), next = orderedScope().find(e => !S.prog[pid(e)] && !inQ.has(e));
+  if (next) s.queue.push({ e: next, isNew: true });
+}
 function apply(item, ok) {
   const s = session;
   noteAnswer(item.e, ok);
-  if (!(s.kind === 'free' && ok)) grade(item.e, ok); else save();
+  if (!(s.kind === 'free' && ok)) grade(item.e, ok, s.mode && s.mode.type === 'flip'); else save();
   if (ok) s.right++; else { s.wrong++; if (s.missed.indexOf(item.e) < 0) s.missed.push(item.e); }
 }
 /* the end of a round: what was marked as not known comes back once, as a question with four answers.
@@ -826,7 +837,7 @@ function renderSessionDone() {
     (r && r.pos ? '<p class="small">בחזרה בסוף הסבב: ' + r.right + ' נכונות מתוך ' + Math.min(r.pos, r.qs.length) + '.</p>' : '') +
     (n ? '<p class="muted small">ערכים שטעית בהם יחזרו מחר, ונכנסו לרשימת הטעויות החוזרות.</p>' : '') +
     doneButtons('עוד סיבוב', n) + '<button class="link" id="home">חזרה למסך הלימוד</button></div>';
-  $('again').onclick = () => { const k = s.kind === 'due' ? undefined : s.kind; startSession(k); };
+  $('again').onclick = () => { if (s.list) { startSession(s.kind, s.list.map(e => ({ e, isNew: !S.prog[pid(e)] }))); return; } const k = s.kind === 'due' ? undefined : s.kind; startSession(k); };
   const mb = $('mist'); if (mb) mb.onclick = () => nav('learn', 'review');
   $('home').onclick = () => { session = null; goBack(); };
 }
@@ -1516,6 +1527,12 @@ function answerInGloss(ans, text) {
     const f = new Set([w]); for (const end of ENDS) if (w.endsWith(end) && w.length - 2 >= 2) f.add(w.slice(0, -2));
     const k = w.replace(/[וי]/g, ''); if (k.length >= 3) f.add('~' + k); return f; });
   const toks = (String(text).match(/[\u05d0-\u05ea]+/g) || []).map(norm);
+  const WORDS_A = String(ans).split(/\s+/).map(x => norm(xwLetters(x)));
+  /* an Aramaic noun or word that ends in א, and its Hebrew translation without the א: שבתא and שבת, דמא and דם, בשרא and בשר.
+     The stem is compared as written and with ו and י left out on both sides */
+  const stems = WORDS_A.filter(w => w.length >= 3 && w.endsWith('א')).map(w => { const s = w.slice(0, -1); return [s, s.replace(/[וי]/g, '')]; });
+  if (stems.length && toks.some(t => { const f = [t]; let x = t; for (let i = 0; i < 2 && /^[הובלכמשד]/.test(x) && x.length > 2; i++) { x = x.slice(1); f.push(x); }
+    return f.some(v => stems.some(([s, ks]) => v === s || (ks.length >= 2 && v.replace(/[וי]/g, '') === ks))); })) return true;
   return toks.some(t => { const f = forms(t); return words.some(ws => [...ws].some(w => f.has(w))); });
 }
 /* for each letter of a word as written: F a final letter, R one of כ מ נ פ צ written plain, a dot for the rest.
@@ -2257,7 +2274,8 @@ function wdEndHtml() {
 function wdShareText() {
   const g = wd, link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname), n = streakOf(S.settings.wdDays);
   return shareLines(['ארמית: מסכת שבת', '🟩 וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : ''), '🎯 ניחושים: ' + (g.won ? g.rows.length : 'X') + '/6',
-    '💡 ' + (g.hint ? 'רמזים: 1 (רמז פרק)' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n]));
+    '💡 ' + (g.hint ? 'רמזים: 1 (רמז פרק)' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n],
+    g.rows.map(w => wdScore(w, g.ans).map(v => ({ g: '🟩', y: '🟨', x: '⬜' })[v]).join(''))));
 }
 /* the streak with its lifelines (🛡️), worked out afresh from the list of solved days, so it never drifts.
    Each challenge holds up to two lifelines and starts with two. One calendar day missed uses a lifeline and the streak goes on;
@@ -2288,6 +2306,23 @@ function streakInfo(list, extra) {
 }
 function streakOf(list, extra) { return streakInfo(list, extra).n; }
 /* a lifeline used for yesterday is told once, on the learning screen */
+/* a gentle reminder once in 30 days to save a backup: progress lives only on this device.
+   It counts from the last backup, or from the first day with progress; "לא עכשיו" puts it off by 30 days */
+const BACKUP_DAYS = 30;
+function backupDue() {
+  if (Object.keys(S.prog).length < 10) return false;
+  const st = S.settings, t = Date.now();
+  if (!st.backupBase) { st.backupBase = t; save(); }
+  const from = Math.max(st.backupAt || st.backupBase, st.backupSnooze || 0);
+  return t - from >= BACKUP_DAYS * 864e5;
+}
+function backupNote() {
+  if (!backupDue()) return;
+  const at = view.querySelector('.stats'); (at || view).insertAdjacentHTML(at ? 'beforebegin' : 'beforeend', '<div class="bk-note" id="bk-note"><p>עבר חודש מאז הגיבוי האחרון. ההתקדמות שמורה רק במכשיר הזה, וגיבוי שומר עליה אם המכשיר יוחלף או ינוקה.</p>' +
+    '<div class="row"><button class="btn" id="bk-go">גיבוי עכשיו</button><button class="btn line" id="bk-later">לא עכשיו</button></div></div>');
+  $('bk-go').onclick = () => { exportBackup(); const n = $('bk-note'); if (n) n.remove(); };
+  $('bk-later').onclick = () => { S.settings.backupSnooze = Date.now(); save(); const n = $('bk-note'); if (n) n.remove(); };
+}
 function shieldNotice() {
   const y = (() => { const d = now(); d.setDate(d.getDate() - 1); return dayOf(d); })(), seen = S.settings.shieldSeen || {}, msgs = [];
   [['xw', 'בתשחץ היומי', streakInfo(S.settings.xwDays, S.settings.xwDaily && S.settings.xwDaily.day)], ['wd', 'בוורדל', streakInfo(S.settings.wdDays)]].forEach(([k, name, inf]) => {
@@ -2350,6 +2385,7 @@ function backupSummary(o) {
   return n(d.prog) + ' ערכים בלימוד, ' + n(d.fav) + ' מועדפים, ' + n(d.miss) + ' ברשימת הטעויות, ' + n(d.edits) + ' פירושים שנערכו' + (o.saved ? '. נשמר בתאריך ' + String(o.saved).slice(0, 10) : '');
 }
 async function exportBackup() {
+  S.settings.backupAt = Date.now(); save();
   const text = backupText(), name = 'aramit-shabbat-backup-' + localDay() + '.json';
   const FS = plug('Filesystem'), SH = plug('Share');
   if (FS && SH) {
@@ -2488,14 +2524,14 @@ function betaLabHtml() {
   return '<div class="field lab"><span class="label">🛠️ מעבדת בטא</span>' +
     '<p class="small muted">התאריך המדומה: ' + day.split('-').reverse().join('.') + ', מהדורה #' + xwEdition(day) + (sh ? ' (הזזה של ' + sh + ' ימים)' : ' (התאריך האמיתי)') + '.</p>' +
     '<p class="small">תשחץ: 🔥 ' + xi.n + ' 🛡️ ' + xi.shields + '/2. וורדל: 🔥 ' + wi.n + ' 🛡️ ' + wi.shields + '/2.</p>' +
-    '<label for="lab-ed">מעבר למהדורה (1 עד 120)</label><div class="two"><input type="number" id="lab-ed" min="1" max="120" value="' + Math.min(120, Math.max(1, xwEdition(day))) + '"><button class="btn line" id="lab-go">מעבר</button></div>' +
+    '<label for="lab-ed">מעבר למהדורה (1 עד ' + ((window.DAILY && window.DAILY.boards.length) || 120) + ')</label><div class="two"><input type="number" id="lab-ed" min="1" max="' + window.DAILY.boards.length + '" value="' + Math.min(window.DAILY.boards.length, Math.max(1, xwEdition(day))) + '"><button class="btn line" id="lab-go">מעבר</button></div>' +
     '<div class="two"><button class="btn line" id="lab-day">סימולציית יום (+1)</button><button class="btn line" id="lab-reset">חזרה להיום</button></div>' +
     '<p class="small muted">ההזזה משנה רק את התאריך שהאפליקציה רואה. הרצף וחבלי ההצלה מחושבים מחדש לפי ימי הפתרון.</p></div>';
 }
 function bindBetaLab() {
   if (!BETA || !$('lab-go')) return;
   const apply = n => { setShift(n); wd = null; if (xwStale()) xg = null; Object.keys(drawn).forEach(k => delete drawn[k]); openSettings(); render(false); toast('התאריך המדומה: ' + localDay().split('-').reverse().join('.') + ', מהדורה #' + xwEdition(localDay())); };
-  $('lab-go').onclick = () => { const n = Math.min(120, Math.max(1, parseInt($('lab-ed').value, 10) || 1)); apply(dayShift() + n - xwEdition(localDay())); };
+  $('lab-go').onclick = () => { const n = Math.min(window.DAILY.boards.length, Math.max(1, parseInt($('lab-ed').value, 10) || 1)); apply(dayShift() + n - xwEdition(localDay())); };
   $('lab-day').onclick = () => apply(dayShift() + 1);
   $('lab-reset').onclick = () => apply(0);
 }
@@ -2585,7 +2621,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok) => grade(BYID.get(w), ok), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
 
 /* hardware back button inside the Android app */
 try {
