@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
@@ -162,11 +162,18 @@ function stats(list) {
   return { total: list.length, due, learned, fresh, boxes, seen: list.length - fresh };
 }
 function newToday() { const t = today(); let n = 0; for (const k in S.prog) if (S.prog[k].f === t) n++; return n; }
+/* r counts the rounds in a row (one a day at most) in which the entry was remembered; at three it becomes known
+   and leaves the daily reviews. A miss sets the count back to zero */
+const KNOWN_RUN = 3;
 function grade(e, ok) {
   const k = pid(e), t = today(); const p = S.prog[k] || { b: 0, d: t, n: 0, x: 0, f: t };
   p.n++;
-  if (ok) { p.b = Math.min(p.b + 1, 6); p.d = t + INTERVALS[p.b]; }
-  else { p.x++; p.b = Math.max(0, Math.min(p.b, 1) - 1); p.d = t; }
+  if (ok) {
+    p.b = Math.min(p.b + 1, 6); p.d = t + INTERVALS[p.b];
+    if (p.rd !== t) { p.r = (p.r || 0) + 1; p.rd = t; }
+    if (p.r >= KNOWN_RUN && p.b < KNOWN_BOX) { p.b = KNOWN_BOX; p.d = t + INTERVALS[KNOWN_BOX]; }
+  }
+  else { p.x++; p.b = Math.max(0, Math.min(p.b, 1) - 1); p.d = t; p.r = 0; p.rd = t; }
   S.prog[k] = p; save();
 }
 function markKnown(e) { const t = today(); S.prog[pid(e)] = { b: KNOWN_BOX, d: t + INTERVALS[KNOWN_BOX], n: 1, x: 0, f: t, k: 1 }; save(); }
@@ -576,11 +583,20 @@ if (!NATIVE) {
   window.addEventListener('appinstalled', () => { const b = document.getElementById('install'); if (b) b.remove(); });
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     const had = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('sw.js').catch(() => { /* no offline cache in this browser */ });
-    /* a new version took over: reload at once on a main screen, otherwise it loads the next time the app opens */
+    let asked = false;
+    /* a new version waits in the background: a bar at the bottom offers it, and a tap lets it take over and reloads */
+    const offer = w => {
+      if (!w || !navigator.serviceWorker.controller || document.getElementById('upd')) return;
+      document.body.insertAdjacentHTML('beforeend', '<button class="upd" id="upd" type="button">גרסה חדשה זמינה: לחצו לרענון</button>');
+      document.getElementById('upd').onclick = () => { asked = true; w.postMessage({ type: 'skip-waiting' }); setTimeout(() => location.reload(), 3000); };
+    };
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      if (reg.waiting) offer(reg.waiting);
+      reg.addEventListener('updatefound', () => { const w = reg.installing; if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') offer(w); }); });
+    }).catch(() => { /* no offline cache in this browser */ });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!had) return;
-      if (!R.sub && !sheetOpen) location.reload(); else toast('גרסה חדשה הותקנה. היא תיטען בפתיחה הבאה');
+      if (asked || (!R.sub && !sheetOpen)) location.reload(); else toast('גרסה חדשה הותקנה. היא תיטען בפתיחה הבאה');
     });
   }
 }
@@ -623,7 +639,19 @@ function gem(n) { const h = hebNum(n); return h.length === 1 ? h + '׳' : h.slic
 function holdLabel() { return SC.d0 === SC.d1 ? 'דף ' + gem(SC.d0) : 'דפים ' + gem(SC.d0) + '–' + gem(SC.d1); }
 function holdHtml() {
   if (SC.by !== 'daf') return '';
-  return '<div class="hold"><button class="holdl" id="hold-open">אוחז ב' + esc(holdLabel()) + '</button><button class="btn line" id="hold-plus"' + (SC.d1 >= 157 ? ' disabled' : '') + '>+ דף</button></div>';
+  return '<div class="hold"><button class="holdl" id="hold-open">אוחז ב' + esc(holdLabel()) + '<small>הכנה לדף ' + esc(gem(SC.d1)) + '</small></button><button class="btn line" id="hold-plus"' + (SC.d1 >= 157 ? ' disabled' : '') + '>+ דף</button></div>';
+}
+/* הכנה לדף: the words and concepts that appear for the first time on the last page of the range, to read before the lesson */
+function openPrep() {
+  const d = SC.d1, ws = D.filter(e => dafNum(e.a) === d).sort((x, y) => x.a - y.a || y.c - x.c), cs = CN.filter(e => dafNum(e.a) === d);
+  const row = e => '<div><b>' + esc(e.w) + '</b> <span>' + esc(e.cn ? e.s : gloss(e)) + '</span>' + (e.rare ? ' <span class="rare">נדיר</span>' : '') + '</div>';
+  openSheet('<div class="row between"><h2>הכנה לדף ' + esc(gem(d)) + '</h2><button class="link" id="pr-close">סגירה</button></div>' +
+    '<p class="small muted">מה שמופיע לראשונה במסכת בדף ' + esc(gem(d)) + ': ' + ws.length + ' מילים וביטויים' + (cs.length ? ' ו-' + cs.length + ' מושגים' : '') + '.</p>' +
+    (cs.length ? '<h3>מושגים</h3><div class="review prep">' + cs.map(row).join('') + '</div>' : '') +
+    (ws.length ? '<h3>מילים וביטויים</h3><div class="review prep">' + ws.map(row).join('') + '</div>' : '<p>בדף הזה אין מילים חדשות.</p>') +
+    '<button class="btn line wide" id="pr-scope">שינוי הטווח</button>');
+  $('pr-close').onclick = closeSheet;
+  $('pr-scope').onclick = () => { closeSheet(); openScope(renderLearn); };
 }
 function renderLearn() {
   const list = scopeItems(), st = stats(list), room = Math.max(0, S.settings.newPerDay - newToday());
@@ -644,7 +672,7 @@ function renderLearn() {
   $('h-arch').onclick = openArchive;
   const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
   const hp = $('hold-plus'); if (hp) hp.onclick = () => { if (SC.d1 < 157) { SC.d1++; saveSc(); render(false); toast('אוחז עד דף ' + hebNum(SC.d1)); } };
-  const ho = $('hold-open'); if (ho) ho.onclick = () => openScope(renderLearn);
+  const ho = $('hold-open'); if (ho) ho.onclick = openPrep;
   shieldNotice();
   view.insertAdjacentHTML('beforeend', installHtml()); bindInstall();
   $('go').onclick = () => startSession();
@@ -707,23 +735,25 @@ function renderSession() {
   if (m.type === 'intro') {
     inner = cn
       ? '<span class="tag">מושג חדש, ' + esc(TOPICS[e.t]) + '</span><div class="' + wordCls(e.w) + '">' + esc(e.w) + '</div><div class="answer">' + esc(e.s) + '</div>' + explainHtml(e) +
-        '<div class="two"><button class="btn ghost" id="known">כבר יודע</button><button class="btn" id="learn">ללמוד אותו</button></div>'
+        '<div class="two"><button class="btn ghost" id="known">כבר מכיר ✓</button><button class="btn" id="learn">ללמוד אותו</button></div>'
       : '<span class="tag">מילה חדשה</span><div class="' + wordCls(e.w) + '">' + esc(e.w) + '</div>' +
         '<div class="answer">' + esc(gloss(e)) + '</div>' + (e.v.length ? '<span class="src">' + esc(altLine(e)) + '</span>' : '') + srcHtml(e) +
-        '<div class="two"><button class="btn ghost" id="known">כבר יודע</button><button class="btn" id="learn">ללמוד אותה</button></div>';
+        '<div class="two"><button class="btn ghost" id="known">כבר מכיר ✓</button><button class="btn" id="learn">ללמוד אותה</button></div>';
   } else if (m.type === 'flip') {
     const front = s.rev ? '<span class="tag">' + (cn ? 'איזה מושג מתאים להגדרה?' : 'איזו מילה מתאימה לפירוש?') + '</span><div class="word sm">' + esc(cn ? e.s : gloss(e)) + '</div>'
                         : '<span class="tag">' + (cn ? 'מה פירוש המושג?' : 'מה הפירוש?') + '</span><div class="' + wordCls(e.w) + '">' + esc(e.w) + '</div>';
     const back = cn ? '<div class="answer">' + (s.rev ? '<span class="word md">' + esc(e.w) + '</span>' : esc(e.s)) + '</div>' + explainHtml(e)
                     : '<div class="answer">' + (s.rev ? '<span class="word md">' + esc(e.w) + '</span>' : esc(gloss(e))) + '</div>' + srcHtml(e);
     inner = front + (s.stage === 'ask' ? '<button class="btn wide" id="show">הצגת התשובה</button>'
-      : back + '<div class="two"><button class="btn bad" id="no">לא ידעתי</button><button class="btn good" id="yes">ידעתי</button></div>');
+      : back + '<div class="two"><button class="btn bad" id="no">לא ידעתי</button><button class="btn good" id="yes">ידעתי</button></div>') +
+      '<div class="knownrow"><button class="link" id="known">כבר מכיר ✓</button></div>';
   } else {
     const shown = s.stage === 'shown';
-    inner = promptHtml(s.q) + optionsHtml(s.q, shown, s.picked) + (shown ? afterHtml(e) + '<button class="btn wide" id="next">הבא</button>' : '');
+    inner = promptHtml(s.q) + optionsHtml(s.q, shown, s.picked) + (shown ? afterHtml(e) + '<button class="btn wide" id="next">הבא</button>' : '<div class="knownrow"><button class="link" id="known">כבר מכיר ✓</button></div>');
   }
   view.innerHTML = '<div class="row between"><span class="small muted">' + (s.pos + 1) + ' מתוך ' + s.queue.length + (p ? ' · שלב ' + p.b + ' מתוך 6' : '') + '</span><button class="link" id="quit">סיום</button></div>' +
-    '<div class="progress"><i style="width:' + Math.round(s.pos / s.queue.length * 100) + '%"></i></div><section class="card">' + inner + '</section>';
+    '<div class="progress"><i style="width:' + Math.round(s.pos / s.queue.length * 100) + '%"></i></div><section class="card" id="lcard">' + inner + '<i class="swhint"></i></section>' +
+    '<p class="small muted center swtip">החלקה ימינה: זוכר. שמאלה: לחזרה. למעלה: כבר מכיר</p>';
   $('quit').onclick = () => nav('learn', 'done', true);
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('known', () => { markKnown(e); advance(); });
@@ -733,6 +763,36 @@ function renderSession() {
   on('no', () => { apply(item, false); advance(); });
   on('next', advance);
   view.querySelectorAll('.opt').forEach(b => { b.onclick = () => { s.picked = +b.dataset.i; s.stage = 'shown'; apply(item, s.q.opts[s.picked] === e); renderSession(); }; });
+  /* the card follows the thumb. Right: remembered; left: back for review; up: already known. A question with four answers
+     takes only the upward gesture, and one already answered takes none */
+  const acts = {
+    known: () => { markKnown(e); advance(); },
+    yes: m.type === 'intro' ? () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); } : m.type === 'flip' ? () => { apply(item, true); advance(); } : null,
+    no: m.type === 'intro' ? () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); } : m.type === 'flip' ? () => { apply(item, false); advance(); } : null
+  };
+  if (m.type === 'mcq' && s.stage === 'shown') return;
+  cardSwipe($('lcard'), acts);
+}
+function cardSwipe(card, acts) {
+  if (!card) return;
+  const hint = card.querySelector('.swhint'), LABEL = { yes: 'זוכר', no: 'לחזרה', known: 'כבר מכיר ✓' };
+  let x0 = 0, y0 = 0, dx = 0, dy = 0, on = false, kind = null;
+  const which = () => (-dy > 70 && -dy > Math.abs(dx)) ? 'known' : dx > 80 ? 'yes' : dx < -80 ? 'no' : null;
+  card.addEventListener('touchstart', ev => { if (ev.touches.length !== 1 || ev.target.closest('button,a,input')) return; const t = ev.touches[0]; x0 = t.clientX; y0 = t.clientY; dx = dy = 0; on = true; card.classList.add('drag'); }, { passive: true });
+  card.addEventListener('touchmove', ev => {
+    if (!on) return; const t = ev.touches[0]; dx = t.clientX - x0; dy = t.clientY - y0;
+    /* in a right-to-left page a move to the right is positive dx all the same */
+    card.style.transform = 'translate(' + dx * 0.6 + 'px,' + Math.min(0, dy) * 0.6 + 'px) rotate(' + dx / 40 + 'deg)';
+    kind = which(); if (kind && !acts[kind]) kind = null;
+    hint.className = 'swhint' + (kind ? ' ' + kind : ''); hint.textContent = kind ? LABEL[kind] : ''; hint.style.opacity = kind ? 1 : Math.min(1, Math.max(Math.abs(dx), -dy) / 120) * 0.4;
+  }, { passive: true });
+  const end = () => {
+    if (!on) return; on = false; card.classList.remove('drag');
+    const k = which(), fn = k && acts[k];
+    if (fn) { card.classList.add('fly'); card.style.transform = k === 'known' ? 'translateY(-120%)' : 'translateX(' + (k === 'yes' ? 120 : -120) + '%)'; card.style.opacity = 0; setTimeout(fn, 170); }
+    else { card.classList.add('fly'); card.style.transform = ''; hint.style.opacity = 0; setTimeout(() => card.classList.remove('fly'), 200); }
+  };
+  card.addEventListener('touchend', end); card.addEventListener('touchcancel', end);
 }
 function apply(item, ok) {
   const s = session;
@@ -1924,7 +1984,7 @@ function xwType(ch) {
   /* with the pin on, the letter replaces the one under the cursor and the cursor stays */
   if (S.settings.xwPin) {
     if (xwLocked(g.cur)) { toast('המשבצת נעולה: היא שייכת למילה שנפתרה או לרמז'); return; }
-    g.typed[g.cur] = ch; g.bad.delete(g.cur); xwPaint(); xwSave(); xwDone(); return;
+    g.typed[g.cur] = ch; g.bad.delete(g.cur); if (xwSolved(w)) xwNextOpen(); xwPaint(); xwSave(); xwDone(); return;
   }
   let i = w.cells.indexOf(g.cur);
   while (i < w.cells.length - 1 && xwLocked(w.cells[i])) i++;
@@ -1936,7 +1996,19 @@ function xwType(ch) {
   let j = i + 1; while (j < w.cells.length && !empty(j)) j++;
   if (j >= w.cells.length) { j = w.cells.findIndex((c, x) => x !== i && empty(x)); if (j < 0) j = Math.min(i + 1, w.cells.length - 1); }
   g.cur = w.cells[j];
+  /* a word just solved: on to the next open word of the board, at its first empty cell */
+  if (xwSolved(w)) xwNextOpen();
   xwPaint(); xwSave(); xwDone();
+}
+function xwNextOpen() {
+  const g = xg, ws = g.b.words, n = ws.length;
+  for (let d = 1; d < n; d++) {
+    const i = (g.act + d) % n, w = ws[i];
+    if (xwSolved(w)) continue;
+    const k = w.cells.find(c => !g.typed[c] && !xwLocked(c));
+    g.act = i; g.cur = k !== undefined ? k : w.cells.find(c => !xwLocked(c)) || w.cells[0]; return true;
+  }
+  return false;
 }
 /* ⌫ deletes the letter under the cursor; on an empty cell it goes back and deletes the letter before.
    Letters a hint revealed or that belong to a crossing word already solved are kept and passed over, as typing passes over them */
@@ -2003,13 +2075,15 @@ function xwWrong() { const g = xg; return g.b.L.reduce((n, ch, k) => n + (ch && 
 /* "בלי רמזים ובדיקות", or the two counts in brackets */
 function xwAids(h) { return h ? ' (רמזים: ' + h + ')' : ', בלי רמזים'; }
 /* the result of the daily board, the same words the summary shares, from the record kept for the day */
+/* the result to share, short and with nothing of the solution: the game and its edition, the time, the hints,
+   the streak and the address. Each line opens with a right-to-left mark, so it reads right in a chat */
+function shareLines(lines) { const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname); return lines.map(x => '\u200f' + x).join('\n') + (link ? '\n' + link : ''); }
 function dailyShareText(b, secs, hints, checks, day) {
-  const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
-  return 'ארמית: מסכת שבת\nתשחץ יומי #' + b.ed + ': ' + b.theme + ', ' + day.split('-').reverse().join('.') + '\n' +
-    'פתרתי ' + b.words.length + ' מילים ב-' + mmss(secs || 0) + xwAids(hints, checks) + (link ? '\n' + link : '');
+  return shareLines(['ארמית: מסכת שבת', '🧩 תשחץ יומי #' + b.ed, '⏱️ זמן: ' + mmss(secs || 0), '💡 ' + (hints ? 'רמזים: ' + hints : 'בלי רמזים'), '🔥 רצף: ' + xwStreak()]);
 }
 function xwShareText() {
   const g = xg, h = g.hint.size, wrong = g.done ? 0 : xwWrong();
+  if (g.done && g.day && g.b.anchor && !g.arch) return dailyShareText(g.b, g.secs, h, 0, g.day);
   const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
   return 'ארמית: מסכת שבת\n' + (g.day ? 'תשחץ יומי' + (g.b.anchor ? ' #' + g.b.ed + ': ' + g.b.theme : '') + ', ' + g.day.split('-').reverse().join('.') : 'תשחץ') + '\n' +
     (g.done ? 'פתרתי ' : 'מילאתי ') + g.b.words.length + ' מילים ב-' + mmss(g.secs || 0) + xwAids(h, g.checks || 0) +
@@ -2182,9 +2256,8 @@ function wdEndHtml() {
 }
 function wdShareText() {
   const g = wd, link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname), n = streakOf(S.settings.wdDays);
-  const sq = { g: '🟩', y: '🟨', x: '⬛' };
-  return 'וורדל מסכת שבת #' + g.ed + ' ' + (g.won ? g.rows.length : 'X') + '/6' + (n ? ' 🔥' + n : '') + (g.hint ? ', עם רמז פרק' : '') + '\n' +
-    g.rows.map(w => '‏' + wdScore(w, g.ans).map(v => sq[v]).join('')).join('\n') + (link ? '\n' + link : '');
+  return shareLines(['ארמית: מסכת שבת', '🟩 וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : ''), '🎯 ניחושים: ' + (g.won ? g.rows.length : 'X') + '/6',
+    '💡 ' + (g.hint ? 'רמזים: 1 (רמז פרק)' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n]));
 }
 /* the streak with its lifelines (🛡️), worked out afresh from the list of solved days, so it never drifts.
    Each challenge holds up to two lifelines and starts with two. One calendar day missed uses a lifeline and the streak goes on;
@@ -2426,6 +2499,53 @@ function bindBetaLab() {
   $('lab-day').onclick = () => apply(dayShift() + 1);
   $('lab-reset').onclick = () => apply(0);
 }
+/* the first opening, for a new learner with nothing known yet: where they hold in the lesson, and how many of the most
+   frequent words they already know. The words of the level chosen are shown as tags, all marked; a tap leaves one out */
+const welcome = { lvl: 0, off: new Set() };
+const WLEVELS = [[0, 'מתחיל'], [30, 'יסודות'], [80, 'בינוני'], [150, 'מתקדם']];
+function topWords(n) { return D.filter(e => !e.ext).sort((x, y) => y.c - x.c).slice(0, n); }
+function openWelcome(step) {
+  const dots = '<div class="steps">' + [0, 1, 2].map(i => '<i class="' + (i <= step ? 'on' : '') + '"></i>').join('') + '</div>';
+  let body, foot;
+  if (step === 0) {
+    body = '<div class="hero">הארמית של מסכת שבת, מילה אחרי מילה</div>' +
+      '<p>' + CORE_N + ' מילים וביטויים שחוזרים בגמרא של מסכת שבת, ועוד ' + (D.length - CORE_N) + ' במאגר המורחב, עם פירוש קצר, מספר ההופעות והדף שבו כל מילה מופיעה לראשונה.</p>' +
+      '<p class="muted">כמה דקות ביום מספיקות. האפליקציה זוכרת מה למדת ומחזירה כל מילה בדיוק כשצריך לחזור עליה.</p>';
+    foot = '<button class="btn wide" id="o-next">הבא</button>';
+  } else if (step === 1) {
+    const opts = []; for (let d = 2; d <= 157; d++) opts.push('<option value="' + d + '"' + (SC.by === 'daf' && SC.d1 === d ? ' selected' : '') + '>דף ' + hebNum(d) + '</option>');
+    body = '<div class="hero">באיזה דף אתם אוחזים בשיעור?</div>' +
+      '<label for="o-daf">הלימוד והחידון יתמקדו במה שלמדתם עד הדף הזה</label><select id="o-daf"><option value="">בחרו דף</option>' + opts.join('') + '</select>' +
+      '<p class="small muted">אפשר לשנות בכל רגע ב"מה מתרגלים" במסך הלימוד.</p>';
+    foot = '<div class="two"><button class="btn ghost" id="o-skip">כל המסכת</button><button class="btn" id="o-next">המשך</button></div>';
+  } else {
+    const n = WLEVELS[welcome.lvl][0], ws = topWords(n);
+    body = '<div class="hero">כמה מילים אתם כבר מכירים?</div>' +
+      '<div class="seg" id="o-lvl">' + WLEVELS.map(([k, t], i) => '<button data-v="' + i + '" aria-pressed="' + (welcome.lvl === i) + '">' + t + ' (' + k + ')</button>').join('') + '</div>' +
+      (n ? '<p class="small muted">' + n + ' המילים השכיחות ביותר במסכת. לחיצה על מילה שאינכם מכירים מורידה את הסימון שלה.</p>' +
+        '<div class="chips known" id="o-words">' + ws.map(e => '<button class="chip" data-w="' + esc(e.w) + '" aria-pressed="' + !welcome.off.has(e.w) + '">' + esc(e.w) + '</button>').join('') + '</div>'
+        : '<p class="small muted">מתחילים מן ההתחלה: המילים השכיחות ביותר יגיעו ראשונות.</p>');
+    foot = '<div class="two"><button class="btn ghost" id="o-prev">הקודם</button><button class="btn" id="o-next">מתחילים' + (n ? ' (' + (n - ws.filter(e => welcome.off.has(e.w)).length) + ')' : '') + '</button></div>';
+  }
+  openSheet(dots + '<div class="stack" style="gap:14px">' + body + '</div>' + foot, true);
+  const done = () => {
+    const t = today(), n = WLEVELS[welcome.lvl][0];
+    topWords(n).forEach(e => { if (!welcome.off.has(e.w)) S.prog[pid(e)] = { b: KNOWN_BOX, d: t + INTERVALS[KNOWN_BOX], n: 1, x: 0, f: t - 1, k: 1 }; });
+    S.onboarded = true; save(); closeSheet(); render();
+  };
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on('o-prev', () => openWelcome(step - 1));
+  on('o-skip', () => { if (SC.by === 'daf') { SC.by = 'all'; saveSc(); } openWelcome(2); });
+  on('o-next', () => {
+    if (step === 1) { const v = +$('o-daf').value; if (v) { SC.by = 'daf'; SC.d0 = 2; SC.d1 = v; saveSc(); } }
+    if (step < 2) openWelcome(step + 1); else done();
+  });
+  bindSeg('o-lvl', v => { welcome.lvl = +v; welcome.off.clear(); openWelcome(2); });
+  const ow = $('o-words'); if (ow) ow.onclick = ev => { const b = ev.target.closest('[data-w]'); if (!b) return; const w = b.dataset.w;
+    if (welcome.off.has(w)) welcome.off.delete(w); else welcome.off.add(w);
+    b.setAttribute('aria-pressed', String(!welcome.off.has(w)));
+    const nb = $('o-next'), n = WLEVELS[welcome.lvl][0]; nb.textContent = 'מתחילים (' + (n - welcome.off.size) + ')'; };
+}
 function openOnboarding(step) {
   const dots = '<div class="steps">' + [0, 1, 2].map(i => '<i class="' + (i <= step ? 'on' : '') + '"></i>').join('') + '</div>';
   let body;
@@ -2462,10 +2582,10 @@ $('btn-theme').onclick = () => {
 try { history.replaceState(R, ''); } catch (e) { /* ignore */ }
 render();
 TABS.forEach(t => { if (t !== R.tab) paint(t); });
-if (!S.onboarded) openOnboarding(0);
+if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok) => grade(BYID.get(w), ok), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
 
 /* hardware back button inside the Android app */
 try {

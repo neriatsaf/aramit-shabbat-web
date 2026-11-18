@@ -365,3 +365,21 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .xtools button.pin.on{color:var(--brand-ink)}
 .xtools button.pin.on svg{stroke-width:2.6}
 .xtools button.pin.on svg rect{fill:currentColor;fill-opacity:.25}
+/* 1.5.1: the bar that offers a new version, above the tab bar */
+.upd{position:fixed;left:12px;right:12px;bottom:calc(72px + env(safe-area-inset-bottom,0px));z-index:60;border:0;border-radius:12px;padding:12px 14px;background:var(--brand);color:var(--brand-ink);font:inherit;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer}
+.hold .holdl small{display:block;font-weight:400;font-size:.78rem;color:var(--brand)}
+.review.prep>div{padding:6px 0}
+/* the learning card follows the thumb: right for "זוכר", left for "לחזרה", up for "כבר מכיר" */
+.card.drag{transition:none}
+.card.fly{transition:transform .18s ease-out,opacity .18s ease-out}
+.card .swhint{position:absolute;top:10px;inset-inline:10px;text-align:center;font-weight:700;border-radius:8px;padding:4px 8px;opacity:0;pointer-events:none}
+.card .swhint.yes{background:var(--good-soft);color:var(--good)}
+.card .swhint.no{background:var(--bad-soft);color:var(--bad)}
+.card .swhint.known{background:var(--brand-soft);color:var(--brand)}
+.knownrow{display:flex;justify-content:center;margin-top:4px}
+#lcard{position:relative;touch-action:none}
+.swtip{text-align:center;margin:6px 0 0}
+@media (hover:hover){.swtip{display:none}}
+/* the first opening: the words of the level chosen, as tags that wrap; a tag left out is struck through */
+.chips.known{flex-wrap:wrap;overflow:visible;max-height:38vh;overflow-y:auto}
+.chips.known .chip[aria-pressed="false"]{text-decoration:line-through;opacity:.55}
