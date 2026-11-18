@@ -1510,7 +1510,7 @@ function xwDailyBoard(day) {
   if (b) { b.theme = d.theme; b.anchor = true; b.ed = ed; }
   return b;
 }
-/* each board allows three hints (one letter each); the board checks itself once it is full */
+/* each board allows three hints (one letter each) */
 const XW_HINTS = 3, XW_CHECKS = 3;
 const XN = 9;
 /* the answer must not show in its own definition: a whole word of the definition, once the prefixes ה ו ב ל כ מ ש
@@ -1708,7 +1708,7 @@ function xwLoad() {
     if (o.v === 2) { b.ed = o.ed || 0; b.theme = o.theme || ''; b.anchor = !!o.anchor; }
     const g = xwGame(b), words = b.words;
     if (Array.isArray(o.typed) && o.typed.length === R * C) g.typed = o.typed.map(x => typeof x === 'string' ? x : '');
-    g.hint = new Set(o.hint || []); g.bad = new Set(o.bad || []); g.wrongW = new Set(o.wrongW || []); g.hintW = new Set(o.hintW || []);
+    g.hint = new Set(o.hint || []); g.bad = new Set();   /* red cells from the old full-board check are not brought back */ g.wrongW = new Set(o.wrongW || []); g.hintW = new Set(o.hintW || []);
     if (o.act >= 0 && o.act < words.length) g.act = o.act;
     if (words[g.act].cells.indexOf(o.cur) >= 0) g.cur = o.cur; else g.cur = words[g.act].cells[0];
     g.secs = Math.max(0, o.secs | 0); g.day = o.day || ''; g.open = !!o.open; g.checks = Math.min(XW_CHECKS, Math.max(0, o.checks | 0));
@@ -1889,6 +1889,7 @@ function xwFitClues() {
    words of a phrase. A letter marked wrong by a check is red here too, and a tap on a letter moves the cursor to its cell */
 function xwBarHtml() {
   const g = xg, w = g.b.words[g.act], e = w.e;
+  if (g.done) return '<p class="xdef xsolved"><b>' + (g.day && g.b.anchor ? 'פתרת את התשחץ היומי #' + g.b.ed : 'פתרת את הלוח') + ' ✓</b> <span>' + mmss(g.secs || 0) + '</span></p><button class="btn" id="xw-sum">לסיכום</button>';
   const parts = e.w.trim().split(/\s+/).map(x => xwLetters(x).length).filter(n => n > 0);
   const def = xwOv(e) || (e.cn || e.xe ? e.s : gloss(e)), len = parts.length > 1 ? parts.join(', ') : w.cells.length + ' אותיות';
   let live = '', at = 0, gaps = new Set(); parts.slice(0, -1).forEach(n => { at += n; gaps.add(at); });
@@ -1928,10 +1929,11 @@ function renderXW() {
   xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350);
   g.open = true; xwSave();
   xwClock();
-  $('quit').onclick = () => { if (g.b.L.every((ch, k) => !ch || g.typed[k])) xwSummary(); else goBack(); };
+  /* a solved board offers its summary in the bar, so the button above goes back; a full board not yet right opens the summary */
+  $('quit').onclick = () => { if (!g.done && g.b.L.every((ch, k) => !ch || g.typed[k])) xwSummary(); else goBack(); };
   /* a personal board offers a new one; the daily board does not lead away to a personal one */
   if ($('xw-new')) $('xw-new').onclick = () => startXW();
-  $('xw-bar').onclick = ev => { const t = ev.target.closest('[data-k]'); if (!t || xg.done) return; xg.cur = +t.dataset.k; xwPaint(); xwSave(); };
+  $('xw-bar').onclick = ev => { if (ev.target.closest('#xw-sum')) { xwSummary(); return; } const t = ev.target.closest('[data-k]'); if (!t || xg.done) return; xg.cur = +t.dataset.k; xwPaint(); xwSave(); };
   $('xw-grid').onclick = ev => { const t = ev.target.closest('[data-k]'), q = ev.target.closest('.xq'); if (t) xwTap(+t.dataset.k, q ? +q.dataset.wi : undefined); };
   view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => xwType(b.dataset.ch); });
   $('xw-del').onclick = xwDel;
@@ -1989,7 +1991,7 @@ function xwPaint() {
   $('xw-left').innerHTML = '<b class="xname">' + (daily ? 'התשחץ היומי #' + g.b.ed + (g.arch ? ' (ארכיון)' : '') : 'לוח אישי') + '</b> ' +
     esc((left ? 'נשארו ' + left : 'הלוח מלא') + (daily && g.b.theme ? ', ' + g.b.theme : ', ' + g.b.words.length + ' מילים'));
   /* the button beside it goes back while the board is open, and to the summary once every cell is filled */
-  const qb = $('quit'); if (qb) qb.textContent = g.b.L.every((ch, k) => !ch || g.typed[k]) ? 'סיכום' : 'חזרה';
+  const qb = $('quit'); if (qb) qb.textContent = !g.done && g.b.L.every((ch, k) => !ch || g.typed[k]) ? 'סיכום' : 'חזרה';
   /* anything that changed height on this paint (a line of text that wrapped) must not push the keyboard under the tab bar */
   const kb = view.querySelector('.xkb'), tabs = document.getElementById('tabs'), grid = $('xw-grid');
   if (kb && tabs && grid && grid.style.width && kb.getBoundingClientRect().bottom > tabs.getBoundingClientRect().top + 1) xwFit();
@@ -2021,7 +2023,7 @@ function xwType(ch) {
   /* with the pin on, the letter replaces the one under the cursor and the cursor stays */
   if (g.pin) {
     if (xwLocked(g.cur)) { toast('המשבצת נעולה: היא שייכת למילה שנפתרה או לרמז'); return; }
-    g.typed[g.cur] = ch; g.bad.delete(g.cur); if (xwSolved(w)) xwNextOpen(); xwPaint(); xwSave(); xwDone(); return;
+    g.typed[g.cur] = ch; g.bad.delete(g.cur); xwNoteWrong(g.cur); if (xwSolved(w)) xwNextOpen(); xwPaint(); xwSave(); xwDone(); return;
   }
   /* the typing point: the cell after the last letter typed in this word, or the cursor when it was moved since.
      A locked letter there (from a crossing word solved, or a hint) that matches the key is taken as typed, so typing the whole
@@ -2042,7 +2044,7 @@ function xwType(ch) {
   while (i < w.cells.length - 1 && xwLocked(w.cells[i])) i++;
   const k = w.cells[i];
   if (xwLocked(k)) { toast('המילה הזו כבר נפתרה'); return; }
-  g.typed[k] = ch; g.bad.delete(k);
+  g.typed[k] = ch; g.bad.delete(k); xwNoteWrong(k);
   /* on to the next empty cell of the word, passing over letters already in place and locked cells */
   const empty = j => !g.typed[w.cells[j]] && !xwLocked(w.cells[j]);
   let j = i + 1; while (j < w.cells.length && !empty(j)) j++;
@@ -2053,6 +2055,8 @@ function xwType(ch) {
   if (xwSolved(w)) xwNextOpen();
   xwPaint(); xwSave(); xwDone();
 }
+/* a word filled in to its last cell with a wrong letter counts as a mistake of the board, for the summary and its review */
+function xwNoteWrong(k) { const g = xg; g.cw[k].forEach(i => { const w = g.b.words[i]; if (w.cells.every(c => g.typed[c]) && !xwSolved(w)) g.wrongW.add(i); }); }
 function xwNextOpen() {
   const g = xg, ws = g.b.words, n = ws.length;
   for (let d = 1; d < n; d++) {
@@ -2100,11 +2104,9 @@ function xwDone() {
   const g = xg, b = g.b;
   const full = b.L.every((ch, k) => !ch || g.typed[k]);
   if (!full) return;
-  /* the board checks itself: once it is full, a wrong letter turns red and its words count as mistakes */
-  if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) {
-    let n = 0; b.L.forEach((ch, k) => { if (ch && norm(g.typed[k]) !== ch) { g.bad.add(k); n++; g.cw[k].forEach(i => g.wrongW.add(i)); } });
-    xwPaint(); xwSave(); toast('הלוח מלא, אבל ' + (n === 1 ? 'משבצת אחת שגויה' : n + ' משבצות שגויות') + '. הן מסומנות באדום'); return;
-  }
+  /* a full board with a mistake is not checked as a whole: nothing turns red, and the ✗ beside a word in the bar is what
+     shows where to look. The board ends when every letter is right */
+  if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) return;
   g.done = true; xwStopClock();
   g.mistakes = [...new Set([...g.wrongW, ...g.hintW])].map(i => ({ e: b.words[i].e, picked: null }));
   if (g.arch) { const a = S.settings.arch || { xw: {}, wd: {} }; a.xw[g.b.ed] = g.secs || 1; S.settings.arch = a; save(); }
@@ -2113,7 +2115,8 @@ function xwDone() {
     const days = (S.settings.xwDays || []).filter(d => d !== g.day).concat([g.day]).sort().slice(-400);
     S.settings.xwDays = days; save();
   }
-  if (!g.arch) xwForget(); xwPaint(); xwSummary();
+  /* the solved board stays in view; the bar says so and offers the summary, which no longer opens by itself */
+  if (!g.arch) xwForget(); xwPaint();
 }
 function renderXWReview() {
   const ms = xg.mistakes || [];

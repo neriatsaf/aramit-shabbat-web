@@ -388,3 +388,5 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .bk-note .row{display:flex;gap:8px}
 .bk-note .btn{flex:1;padding:8px 10px}
 .xw .xname{color:var(--ink);font-weight:700}
+.xbar .xsolved b{color:var(--xok)}
+.xbar #xw-sum{flex:none;padding:8px 16px;min-height:0}
