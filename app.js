@@ -1826,7 +1826,8 @@ function xwSolved(w) { return w.cells.every(k => xg.typed[k] && norm(xg.typed[k]
    so its arrow sits on the left edge of the top half, and the other on the bottom edge of the bottom half */
 const XLEFT = { l: 1, ld: 1 };
 function xwBoardHtml() {
-  const g = xg, b = g.b, act = b.words[g.act], on = new Set(act.cells), anchor = new Set(b.anchor ? b.words[0].cells : []);
+  /* the gold frame marks the anchor while it is open; once it is solved it is a word like the others */
+  const g = xg, b = g.b, act = b.words[g.act], on = new Set(act.cells), anchor = new Set(b.anchor && !xwSolved(b.words[0]) ? b.words[0].cells : []);
   let h = '';
   for (let r = 0; r < b.R; r++) for (let c = 0; c < b.C; c++) {
     const k = r * b.C + c;
@@ -1866,6 +1867,8 @@ function xwFitClues() {
     const cs = getComputedStyle(q), H = q.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     const fits = () => em.getBoundingClientRect().height <= H + 0.5 && em.scrollWidth <= em.clientWidth + 0.5;
     const forms = xwShorter(em.textContent);
+    /* measured in bold, the weight of a selected definition, so the size holds whether or not it is selected */
+    em.style.fontWeight = '700';
     let got = null;
     /* the full text down to 7px, then the shorter forms down to 7px, then everything down to 6px */
     for (const min of [7, 6]) {
@@ -1877,6 +1880,7 @@ function xwFitClues() {
       if (got) break;
     }
     if (!got) { got = { t: forms[forms.length - 1], fs: 6, clip: true }; em.textContent = got.t; em.style.fontSize = '6px'; em.classList.add('clip'); }
+    em.style.fontWeight = '';
     g._fs[wi] = got;
   });
 }
@@ -1900,7 +1904,7 @@ function xwBarHtml() {
 }
 /* the pin: an open lock while typing moves on, a closed one while the cursor stays in its cell */
 const XLOCK = {
-  off: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/></svg>',
+  off: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V5.5a4 4 0 0 1 8 0V7"/></svg>',
   on: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
 };
 function xwFinal(ch) { return ({ 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' })[ch] || ch; }
@@ -2003,7 +2007,22 @@ function xwType(ch) {
     if (xwLocked(g.cur)) { toast('המשבצת נעולה: היא שייכת למילה שנפתרה או לרמז'); return; }
     g.typed[g.cur] = ch; g.bad.delete(g.cur); if (xwSolved(w)) xwNextOpen(); xwPaint(); xwSave(); xwDone(); return;
   }
-  let i = w.cells.indexOf(g.cur);
+  /* the typing point: the cell after the last letter typed in this word, or the cursor when it was moved since.
+     A locked letter there (from a crossing word solved, or a hint) that matches the key is taken as typed, so typing the whole
+     word, letters already in place included, puts every letter in its own cell. A key that does not match it skips the locked
+     letters and goes into the next free cell, as before, for typing only the missing letters */
+  /* when the cursor was put at the first free cell after locked letters (a tap on the definition, or the move to the next
+     open word), the typing point is the start of the word, so a key for the first locked letter is taken too */
+  const ci = w.cells.indexOf(g.cur), fresh = ci > 0 && w.cells.slice(0, ci).every(xwLocked) ? 0 : ci;
+  const tp = g._tp && g._tp.act === g.act && g._tp.cur === g.cur ? g._tp.i : fresh;
+  if (tp >= 0 && tp < w.cells.length && xwLocked(w.cells[tp]) && g.b.L[w.cells[tp]] === ch) {
+    const nx = w.cells.findIndex((c, x) => x > tp && !g.typed[c] && !xwLocked(c));
+    if (nx >= 0) g.cur = w.cells[nx];
+    g._tp = { act: g.act, cur: g.cur, i: tp + 1 };
+    xwPaint(); xwSave(); return;
+  }
+  /* past the end of the word (its last cell was just typed) the cursor decides, as before */
+  let i = tp >= 0 && tp < w.cells.length ? tp : Math.max(0, w.cells.indexOf(g.cur));
   while (i < w.cells.length - 1 && xwLocked(w.cells[i])) i++;
   const k = w.cells[i];
   if (xwLocked(k)) { toast('המילה הזו כבר נפתרה'); return; }
@@ -2013,6 +2032,7 @@ function xwType(ch) {
   let j = i + 1; while (j < w.cells.length && !empty(j)) j++;
   if (j >= w.cells.length) { j = w.cells.findIndex((c, x) => x !== i && empty(x)); if (j < 0) j = Math.min(i + 1, w.cells.length - 1); }
   g.cur = w.cells[j];
+  g._tp = { act: g.act, cur: g.cur, i: i + 1 };
   /* a word just solved: on to the next open word of the board, at its first empty cell */
   if (xwSolved(w)) xwNextOpen();
   xwPaint(); xwSave(); xwDone();
