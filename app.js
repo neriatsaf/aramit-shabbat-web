@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
@@ -17,6 +17,7 @@ const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 const FEEDBACK_PHONE = '';
 /* running inside the Android app, or in a browser; and in a browser, whether it was opened from the home screen */
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const BETA = NATIVE || (/[?&]test\b/.test(location.search) && /[?&]beta\b/.test(location.search));
 const STANDALONE = !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone);
 const VARIANTS = window.VARIANTS || {}, ALIASES = window.ALIASES || {};
 /* the first DECK_CORE entries are the chosen store (three uses or more in the Gemara); the rest is the expanded store of all 24 chapters, rare words included */
@@ -97,7 +98,8 @@ function save() { ver++; try { localStorage.setItem(KEY, JSON.stringify(S)); } c
 /* ---------- helpers ---------- */
 /* the four main screens live side by side on one rail, and each keeps what it shows until it needs redrawing.
    Lookups by id search an open sheet first, then the screen being drawn, and only then the whole page */
-const RAIL = ['games', 'xw', 'quiz', 'dict', 'learn'];
+/* the crossword lives on its own panel at the far end of the rail: it opens from the games, and a swipe never lands on it */
+const RAIL = ['xw', 'games', 'quiz', 'dict', 'learn'];
 const PANEL = {}; RAIL.forEach(t => { PANEL[t] = document.getElementById('p-' + t); });
 let view = PANEL.learn;
 const $ = id => {
@@ -105,7 +107,7 @@ const $ = id => {
   return (host && host.firstChild && host.querySelector(sel)) || (view && view.querySelector(sel)) || document.getElementById(id);
 };
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-function today() { const d = new Date(); return Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000); }
+function today() { const d = now(); return Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000); }
 function shuffle(a, rnd) { rnd = rnd || Math.random; a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 function sample(a, n) { return shuffle(a).slice(0, n); }
 function pid(e) { return e.cn ? e.key : e.w; }
@@ -350,9 +352,18 @@ function scopeLabel() {
 }
 /* the words of a chapter or a page are either all the words that appear there, or only those that appear there for the first time */
 function pkCount(k) { return kindList().filter(e => e.cn || SC.wmode === 'first' ? e.pk === k : !!(e.pkm & (1 << k))).length; }
-function scopeHtml(noKind) {
+/* compact (the quiz): three main choices, and the rest behind "עוד אפשרויות" */
+let scMore = false;
+function scopeHtml(noKind, compact) {
   const items = scopeItems(), nf = kindList().filter(e => S.fav[pid(e)]).length, nm = kindList().filter(e => S.miss[pid(e)]).length;
-  const bys = [['all', 'הכול'], ['perek', 'לפי פרק'], ['daf', 'לפי דף']].concat(SC.kind === 'concepts' ? [['topic', 'לפי נושא']] : [], [['seen', 'מה שכבר למדתי'], ['fav', 'מועדפים (' + nf + ')'], ['miss', 'טעויות חוזרות (' + nm + ')']]);
+  let bys = [['all', 'הכול'], ['perek', 'לפי פרק'], ['daf', 'לפי דף (טווח דפים)']].concat(SC.kind === 'concepts' ? [['topic', 'לפי נושא']] : [], [['seen', 'מה שכבר למדתי'], ['fav', 'מועדפים (' + nf + ')'], ['miss', 'טעויות חוזרות (' + nm + ')']]);
+  let moreBtn = '';
+  if (compact) {
+    const main = ['all', 'perek', 'seen'], open = scMore || main.indexOf(SC.by) < 0;
+    const label = { seen: 'מה שלמדתי' };
+    bys = bys.filter(b => main.indexOf(b[0]) >= 0).map(b => [b[0], label[b[0]] || b[1]]).concat(open ? bys.filter(b => main.indexOf(b[0]) < 0) : []);
+    moreBtn = '<button class="morebtn" id="sc-more" aria-expanded="' + open + '">עוד אפשרויות ' + (open ? '▴' : '▾') + '</button>';
+  }
   let sub = '';
   if (SC.by === 'perek') {
     sub = '<div class="pkpick" id="sc-pk"><button class="chip" data-v="-1" aria-pressed="' + (SC.pereks.length === 0) + '">כל הפרקים</button>' +
@@ -372,13 +383,14 @@ function scopeHtml(noKind) {
     sub += '<div class="field"><span class="label">אילו מילים</span><div class="seg" id="sc-wm"><button data-v="any" aria-pressed="' + (SC.wmode !== 'first') + '">כל מה שמופיע שם</button><button data-v="first" aria-pressed="' + (SC.wmode === 'first') + '">רק מה שמופיע שם לראשונה</button></div></div>';
   return '<div class="field"><span class="label">מה לתרגל</span>' +
     (CN.length && !noKind ? '<div class="seg" id="sc-kind">' + ['words', 'concepts', 'both'].map(k => '<button data-v="' + k + '" aria-pressed="' + (SC.kind === k) + '">' + (k === 'both' ? 'שניהם' : KINDS[k]) + '</button>').join('') + '</div>' : '') +
-    '<div class="pkpick" id="sc-by">' + bys.map(b => '<button class="chip" data-v="' + b[0] + '" aria-pressed="' + (SC.by === b[0]) + '">' + b[1] + '</button>').join('') + '</div>' + sub +
+    '<div class="pkpick" id="sc-by">' + bys.map(b => '<button class="chip" data-v="' + b[0] + '" aria-pressed="' + (SC.by === b[0]) + '">' + b[1] + '</button>').join('') + moreBtn + '</div>' + sub +
     '<p class="small strong" id="sc-count">' + countLabel(items) + '.</p></div>';
 }
 function bindScope(again) {
   const done = () => { saveSc(); again(); };
   bindSeg('sc-kind', v => { SC.kind = v; if (SC.by === 'topic' && v !== 'concepts') SC.by = 'all'; done(); });
   bindSeg('sc-wm', v => { SC.wmode = v; done(); });
+  const mb = $('sc-more'); if (mb) mb.onclick = () => { scMore = !scMore; again(); };
   const by = $('sc-by'); if (by) by.querySelectorAll('button').forEach(b => { b.onclick = () => { SC.by = b.dataset.v; done(); }; });
   const pk = $('sc-pk'); if (pk) pk.querySelectorAll('button').forEach(b => { b.onclick = () => {
     const k = +b.dataset.v;
@@ -417,7 +429,7 @@ function openProgress() {
 }
 
 /* ---------- navigation ---------- */
-const TABS = ['learn', 'dict', 'quiz', 'xw', 'games'];
+const TABS = ['learn', 'dict', 'quiz', 'games'];
 let R = { tab: 'learn', sub: null };
 function nav(tab, sub, replace, keep) {
   stopTimers();
@@ -445,7 +457,7 @@ function paint(tab) {
     else if (tab === 'quiz') { if (sub === 'run' && quiz) renderQuiz(); else if (sub === 'done' && quiz) renderQuizDone(); else if (sub === 'review' && quiz) renderQuizReview(); else renderQuizSetup(); }
     else if (tab === 'xw') { if (sub === 'board' && xg) renderXW(); else if (sub === 'review' && xg) renderXWReview(); else renderXWSetup(); }
     else if (tab === 'games') {
-      if (sub === 'wordle') { if (!wd || wd.day !== localDay()) wd = wdToday(); if (wd) renderWordle(); else renderGames(); }
+      if (sub === 'wordle') { if (!wd || (!wd.arch && wd.day !== localDay())) wd = wdToday(); if (wd) renderWordle(); else renderGames(); }
       else if (sub === 'match' && game) renderMatch();
       else if (sub === 'blitz' && game) renderBlitz();
       else if (sub === 'fill' && game) renderFill();
@@ -466,11 +478,12 @@ function paint(tab) {
 /* keep: a plain move between two main screens, which keeps the panel as it is when nothing changed since it was drawn */
 function render(keep) {
   if (R.tab === 'xw' && R.sub === 'board' && xwStale()) {
-    xwStopClock(); xg = null; R = { tab: 'xw', sub: null };
+    xwStopClock(); xg = null; R = { tab: 'learn', sub: null };
     try { history.replaceState(R, ''); } catch (e) { /* ignore */ }
     toast('התחיל יום חדש: הלוח היומי של היום מחכה'); keep = false;
   }
-  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === R.tab)));
+  const lit = R.tab === 'xw' ? 'games' : R.tab;   /* the crossword belongs to the games tab */
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === lit)));
   $('subtitle').textContent = D.length + ' מילים וביטויים, ' + CN.length + ' מושגים';
   const from = shownTab;
   document.body.classList.toggle('xwmode', R.tab === 'xw' && R.sub === 'board');
@@ -503,7 +516,7 @@ function turnTo(tab) {
   const edge = 28;
   railWrap.addEventListener('touchstart', ev => {
     tracking = false; active = false; dx = 0;
-    if (R.sub || sheetOpen || ev.touches.length !== 1) return;
+    if (R.sub || sheetOpen || ev.touches.length !== 1 || TABS.indexOf(R.tab) < 0) return;
     const t = ev.touches[0];
     if (t.clientX < edge || t.clientX > window.innerWidth - edge) return; /* leave the system back gesture alone */
     if (ev.target.closest && ev.target.closest('.chips, input, textarea, select')) return;
@@ -590,18 +603,27 @@ function drillScope() { return SC.by === 'fav' || SC.by === 'miss'; }
 /* days in a row with the daily crossword solved, counting back from today, or from yesterday while today is still open */
 function dayOf(d) { return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
 function xwStreak() { return streakOf(S.settings.xwDays, S.settings.xwDaily && S.settings.xwDaily.day); }
+function xwStreakInfo() { return streakInfo(S.settings.xwDays, S.settings.xwDaily && S.settings.xwDaily.day); }
 function dailyCardHtml() {
-  const day = localDay(), d = S.settings.xwDaily && S.settings.xwDaily.day === day ? S.settings.xwDaily : null, n = xwStreak();
+  const day = localDay(), d = S.settings.xwDaily && S.settings.xwDaily.day === day ? S.settings.xwDaily : null, xi = xwStreakInfo(), n = xi.n, wi = streakInfo(S.settings.wdDays);
   const tb = xwDailyBoard(day), sv = xwLoad(), going = sv && sv.day === day && sv.b.anchor;
-  const wl = S.settings.wdLast && S.settings.wdLast.day === day ? S.settings.wdLast : null, wn = streakOf(S.settings.wdDays);
+  const wl = S.settings.wdLast && S.settings.wdLast.day === day ? S.settings.wdLast : null, wn = wi.n;
   let wgo = false; try { const o = JSON.parse(localStorage.getItem(WKEY) || 'null'); wgo = !!(o && o.day === day && o.rows && o.rows.length && !o.done); } catch (x) { /* none */ }
   const ed = tb ? tb.ed : xwEdition(day);
   return '<div class="hub" id="hub"><p class="hubh">האתגרים של היום</p><div class="hubg">' +
     '<button class="hcard" id="h-xw"><b>תשחץ יומי #' + ed + '</b>' + (tb ? '<span class="ht">' + esc(tb.theme) + '</span>' : '') +
-      '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + '</span></button>' +
+      '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + ' <em>🛡️ ' + xi.shields + '/2</em></span></button>' +
     '<button class="hcard" id="h-wd"><b>וורדל מסכת שבת #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
-      '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + '</span></button>' +
-    '</div></div>';
+      '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + ' <em>🛡️ ' + wi.shields + '/2</em></span></button>' +
+    '</div><div class="hubx"><button class="hlink" id="h-arch">ארכיון 📅</button>' + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
+}
+/* where the learner holds in the tractate: a page range (מדף עד דף) chosen in "מה מתרגלים" or in the quiz.
+   It filters the daily learning, the quiz and the personal crossword; "+ דף" moves the last page on by one */
+function gem(n) { const h = hebNum(n); return h.length === 1 ? h + '׳' : h.slice(0, -1) + '״' + h.slice(-1); }
+function holdLabel() { return SC.d0 === SC.d1 ? 'דף ' + gem(SC.d0) : 'דפים ' + gem(SC.d0) + '–' + gem(SC.d1); }
+function holdHtml() {
+  if (SC.by !== 'daf') return '';
+  return '<div class="hold"><button class="holdl" id="hold-open">אוחז ב' + esc(holdLabel()) + '</button><button class="btn line" id="hold-plus"' + (SC.d1 >= 157 ? ' disabled' : '') + '>+ דף</button></div>';
 }
 function renderLearn() {
   const list = scopeItems(), st = stats(list), room = Math.max(0, S.settings.newPerDay - newToday());
@@ -617,19 +639,17 @@ function renderLearn() {
     '<div class="legend"><span style="--c:var(--good)">ידועים ' + seg[3][1] + '</span><span style="--c:var(--brand)">בתהליך ' + seg[2][1] + '</span><span style="--c:var(--gold)">בתחילת הדרך ' + seg[1][1] + '</span><span style="--c:var(--line)">עוד לא נלמדו ' + st.fresh + '</span></div>' +
     '<button class="link start" id="pg-open">פירוט ההתקדמות לפי פרקים ונושאים</button></div>' : '') +
     (drill ? '<p class="note">' + (SC.by === 'fav' ? 'תרגול של הערכים שסימנת בכוכב.' : 'תרגול של הערכים שטעית בהם. ערך יוצא מהרשימה אחרי שתי תשובות נכונות ברצף.') + ' תשובה נכונה כאן לא משנה את לוח החזרות, וטעות מחזירה את הערך להתחלה.</p>' :
-    '<div class="field"><span class="label">סדר ה' + nounNew() + '</span><div class="seg" id="ord">' +
-    '<button data-v="freq" aria-pressed="' + (S.settings.order !== 'daf') + '">' + (SC.kind === 'concepts' ? 'לפי נושאים' : 'מהשכיחה לנדירה') + '</button>' +
-    '<button data-v="daf" aria-pressed="' + (S.settings.order === 'daf') + '">לפי סדר הדפים</button></div></div>' +
-    '<p class="note">' + (S.settings.order === 'daf'
-      ? (SC.kind === 'concepts' ? 'המושגים החדשים מגיעים לפי סדר הדפים של המקור שלהם.' : 'המילים החדשות מגיעות לפי הדף שבו הן מופיעות לראשונה, מדף ב ועד דף קנז. מתאים למי שלומד את המסכת על הסדר.') + (SC.kind === 'both' ? ' המושגים משתלבים ביניהן לפי הדף של המקור שלהם.' : '')
-      : (SC.kind === 'concepts' ? 'המושגים החדשים מגיעים נושא אחרי נושא, כסדר המילון.' : 'המילים החדשות מגיעות מהשכיחה ביותר במסכת ועד הנדירה. כך כל מילה שלומדים פותחת כמה שיותר שורות בגמרא.') + (SC.kind === 'both' ? ' אחרי כל שלוש מילים מגיע מושג אחד, כסדר המילון.' : '')) + '</p>' +
     '<p class="small muted">תשובה נכונה מרחיקה את החזרה הבאה: יום, שלושה ימים, שבוע, שבועיים, חודש וחודשיים. טעות מחזירה את הערך להתחלה.</p>');
-  view.insertAdjacentHTML('afterbegin', dailyCardHtml()); $('h-xw').onclick = startXWDaily; $('h-wd').onclick = startWordle;
+  view.insertAdjacentHTML('afterbegin', dailyCardHtml() + holdHtml()); $('h-xw').onclick = startXWDaily; $('h-wd').onclick = startWordle;
+  $('h-arch').onclick = openArchive;
+  const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
+  const hp = $('hold-plus'); if (hp) hp.onclick = () => { if (SC.d1 < 157) { SC.d1++; saveSc(); render(false); toast('אוחז עד דף ' + hebNum(SC.d1)); } };
+  const ho = $('hold-open'); if (ho) ho.onclick = () => openScope(renderLearn);
+  shieldNotice();
   view.insertAdjacentHTML('beforeend', installHtml()); bindInstall();
   $('go').onclick = () => startSession();
   $('sc-open').onclick = () => openScope(renderLearn);
   const pg = $('pg-open'); if (pg) pg.onclick = openProgress;
-  bindSeg('ord', v => { S.settings.order = v; save(); renderLearn(); });
 }
 function buildQueue(kind) {
   const list = scopeItems();
@@ -775,7 +795,7 @@ function drillOn(list, replace) {
 /* ---------- dictionary ---------- */
 /* the list draws DICT_STEP rows at a time and draws the next ones when the reader scrolls near its end */
 const DICT_STEP = 80;
-const dict = { q: '', sort: 'freq', filter: 'all', from: 0, open: null, limit: DICT_STEP, editing: false };
+const dict = { q: '', sort: 'freq', filter: 'all', from: 0, open: null, limit: DICT_STEP, editing: false, more: false };
 /* one search box serves both stores: results from the tab on screen come first, and results from the other store follow under their own heading */
 function wordSearch(list, q) {
   const qs = stripPrefix(q), scored = [];
@@ -885,18 +905,21 @@ function bindSearch() {
 }
 const SEARCH_HINT = 'חיפוש במילים, בביטויים ובמושגים';
 function renderCDict() {
-  view.innerHTML = kindSeg('dkind', 'concepts') + meterHtml(CN, 'מושגים', 'dmeter') +
-    '<input type="search" id="dq" placeholder="' + SEARCH_HINT + '" value="' + esc(dict.q) + '" autocomplete="off" enterkeyhint="search">' +
-    '<div class="seg" id="dsort"><button data-v="topic" aria-pressed="' + (cdict.sort === 'topic') + '">לפי נושאים</button><button data-v="daf" aria-pressed="' + (cdict.sort === 'daf') + '">לפי סדר הדפים</button></div>' +
+  view.innerHTML = kindSeg('dkind', 'concepts') +
+    '<div class="dsearch"><input type="search" id="dq" placeholder="' + SEARCH_HINT + '" value="' + esc(dict.q) + '" autocomplete="off" enterkeyhint="search">' +
+    '<button class="morebtn" id="dmore-opts" aria-expanded="' + !!dict.more + '">סינון ומיון ' + (dict.more ? '▴' : '▾') + (cdict.topic !== -1 || cdict.sort !== 'topic' ? ' •' : '') + '</button></div>' +
+    (dict.more ? '<div class="dopts"><div class="seg" id="dsort"><button data-v="topic" aria-pressed="' + (cdict.sort === 'topic') + '">לפי נושאים</button><button data-v="daf" aria-pressed="' + (cdict.sort === 'daf') + '">לפי סדר הדפים</button></div>' +
     '<div class="chips" id="dchips"><button class="chip" data-v="-1" aria-pressed="' + (cdict.topic === -1) + '">הכול</button><button class="chip" data-v="-2" aria-pressed="' + (cdict.topic === -2) + '">מועדפים</button>' +
-    TOPICS.map((t, k) => '<button class="chip" data-v="' + k + '" aria-pressed="' + (cdict.topic === k) + '">' + esc(t) + '</button>').join('') + '</div>' +
+    TOPICS.map((t, k) => '<button class="chip" data-v="' + k + '" aria-pressed="' + (cdict.topic === k) + '">' + esc(t) + '</button>').join('') + '</div></div>' : '') +
     '<p class="small muted" id="dcount"></p><div class="list" id="dlist"></div><div class="list" id="dother"></div>';
   bindSeg('dkind', v => { dictKind = v; renderDict(); });
   $('dmeter').onclick = openProgress;
   bindSearch();
+  $('dmore-opts').onclick = () => { dict.more = !dict.more; renderCDict(); };
   bindSeg('dsort', v => { cdict.sort = v; cdict.open = null; renderCDict(); });
-  $('dchips').querySelectorAll('button').forEach(b => { b.onclick = () => { cdict.topic = +b.dataset.v; cdict.open = null; renderCDict(); }; });
-  const on = $('dchips').querySelector('[aria-pressed="true"]'); if (on && on.scrollIntoView && cdict.topic > 1) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+  const dc = $('dchips');
+  if (dc) { dc.querySelectorAll('button').forEach(b => { b.onclick = () => { cdict.topic = +b.dataset.v; cdict.open = null; renderCDict(); }; });
+    const on = dc.querySelector('[aria-pressed="true"]'); if (on && on.scrollIntoView && cdict.topic > 1) on.scrollIntoView({ block: 'nearest', inline: 'center' }); }
   fillCDict();
 }
 function fillCDict() {
@@ -939,18 +962,20 @@ function renderDict() {
   if (dictKind === 'concepts' && CN.length) return renderCDict();
   const dafOpts = []; for (let n = 2; n <= 157; n++) dafOpts.push('<option value="' + n + '"' + (dict.from === n ? ' selected' : '') + '>מדף ' + hebNum(n) + '</option>');
   const chips = [['all', 'הכול'], ['fav', 'מועדפים'], ['words', 'מילים'], ['phrases', 'ביטויים'], ['rare', 'מילים נדירות'], ['seen', 'למדתי'], ['new', 'עוד לא למדתי']];
-  view.innerHTML = (CN.length ? kindSeg('dkind', 'words') : '') + meterHtml(D, 'מילים וביטויים', 'dmeter') +
-    '<input type="search" id="dq" placeholder="' + (CN.length ? SEARCH_HINT : 'חיפוש בארמית או בעברית') + '" value="' + esc(dict.q) + '" autocomplete="off" enterkeyhint="search">' +
-    '<div class="seg" id="dsort"><button data-v="freq" aria-pressed="' + (dict.sort === 'freq') + '">לפי שכיחות</button><button data-v="daf" aria-pressed="' + (dict.sort === 'daf') + '">לפי סדר הדפים</button></div>' +
+  /* on top only the store, the search and one small button; the filters and the order open under it */
+  view.innerHTML = (CN.length ? kindSeg('dkind', 'words') : '') +
+    '<div class="dsearch"><input type="search" id="dq" placeholder="' + (CN.length ? SEARCH_HINT : 'חיפוש בארמית או בעברית') + '" value="' + esc(dict.q) + '" autocomplete="off" enterkeyhint="search">' +
+    '<button class="morebtn" id="dmore-opts" aria-expanded="' + !!dict.more + '">סינון ומיון ' + (dict.more ? '▴' : '▾') + (dict.filter !== 'all' || dict.sort !== 'freq' ? ' •' : '') + '</button></div>' +
+    (dict.more ? '<div class="dopts"><div class="seg" id="dsort"><button data-v="freq" aria-pressed="' + (dict.sort === 'freq') + '">לפי שכיחות</button><button data-v="daf" aria-pressed="' + (dict.sort === 'daf') + '">לפי סדר הדפים</button></div>' +
     (dict.sort === 'daf' ? '<select id="dfrom" aria-label="התחלה מדף"><option value="0">מתחילת המסכת (דף ב)</option>' + dafOpts.join('') + '</select>' : '') +
-    '<div class="chips" id="dchips">' + chips.map(c => '<button class="chip" data-v="' + c[0] + '" aria-pressed="' + (dict.filter === c[0]) + '">' + c[1] + '</button>').join('') + '</div>' +
+    '<div class="chips" id="dchips">' + chips.map(c => '<button class="chip" data-v="' + c[0] + '" aria-pressed="' + (dict.filter === c[0]) + '">' + c[1] + '</button>').join('') + '</div></div>' : '') +
     '<p class="small muted" id="dcount"></p><div class="list" id="dlist"></div><div id="dmore"></div><div class="list" id="dother"></div>';
   bindSeg('dkind', v => { dictKind = v; renderDict(); });
-  $('dmeter').onclick = openProgress;
   bindSearch();
+  $('dmore-opts').onclick = () => { dict.more = !dict.more; renderDict(); };
   bindSeg('dsort', v => { dict.sort = v; dict.limit = DICT_STEP; renderDict(); });
   const df = $('dfrom'); if (df) df.onchange = () => { dict.from = +df.value; dict.limit = DICT_STEP; fillDict(); };
-  $('dchips').querySelectorAll('button').forEach(b => { b.onclick = () => { dict.filter = b.dataset.v; dict.limit = DICT_STEP; renderDict(); }; });
+  const dc = $('dchips'); if (dc) dc.querySelectorAll('button').forEach(b => { b.onclick = () => { dict.filter = b.dataset.v; dict.limit = DICT_STEP; renderDict(); }; });
   fillDict();
 }
 let dictRowsNow = [], dictObs = null;
@@ -1046,12 +1071,13 @@ function renderQuizSetup() {
   if (quizCfg.mode === 'content' && CT.length) return renderTQSetup();
   const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + quizCfg.level, b = S.best[key];
   const few = narrowed() && SC.kind !== 'words' && src.filter(e => e.cn).length < 4 && src.some(e => e.cn);
-  view.innerHTML = '<h2>חידון אמריקאי</h2>' + modeSeg() + scopeHtml(true) +
+  if (SC.kind === 'both') { SC.kind = 'words'; saveSc(); }
+  view.innerHTML = '<h2>חידון אמריקאי</h2>' + modeSeg() + scopeHtml(true, true) +
     (few ? '<p class="small muted">בבחירה הזו יש פחות מארבעה מושגים, ולכן התשובות השגויות יושלמו משאר המילון, קודם מאותו נושא.</p>' : '') +
-    '<div class="field"><span class="label">רמת קושי</span><div class="seg" id="qlevel">' + Object.keys(LEVELS).map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.level === k) + '">' + LEVELS[k][0] + '</button>').join('') + '</div>' +
-    '<p class="small muted">' + levelNote() + '.</p></div>' +
-    '<div class="field"><span class="label">מספר שאלות</span><div class="seg" id="qlen">' + [10, 20, 40].map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.len === k) + '">' + k + '</button>').join('') + '</div>' +
-    (n && n < quizCfg.len ? '<p class="small muted">בבחירה הזו יש ' + n + ' ערכים, וזה יהיה מספר השאלות.</p>' : '') + '</div>' +
+    /* the level and the number of questions share one row */
+    '<div class="qrow"><div class="field"><span class="label">רמת קושי</span><div class="seg" id="qlevel">' + Object.keys(LEVELS).map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.level === k) + '">' + LEVELS[k][0] + '</button>').join('') + '</div></div>' +
+    '<div class="field"><span class="label">שאלות</span><div class="seg" id="qlen">' + [10, 20, 40].map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.len === k) + '">' + k + '</button>').join('') + '</div></div></div>' +
+    '<p class="small muted">' + levelNote() + '.' + (n && n < quizCfg.len ? ' בבחירה הזו יש ' + n + ' ערכים, וזה יהיה מספר השאלות.' : '') + '</p>' +
     '<button class="btn wide" id="qstart"' + (n ? '' : ' disabled') + '>' + (n ? 'התחלת החידון' : 'אין ערכים בבחירה הזו') + '</button>' +
     (b ? '<p class="small muted">התוצאה הטובה ביותר שלך בסוג הזה וברמה הזו: ' + b + '%</p>' : '');
   bindMode(); bindScope(renderQuizSetup);
@@ -1135,8 +1161,8 @@ function ctSource(x) { return ['גמרא', 'משנה', 'משנה וגמרא'][x.
 /* the switch at the top of the quiz screen: the three stores of the lexicon, and the content of the sugya */
 function modeSeg() {
   const cur = quizCfg.mode === 'content' ? 'content' : SC.kind;
-  const opts = [['words', KINDS.words]].concat(CN.length ? [['concepts', KINDS.concepts], ['both', 'מילים ומושגים יחד']] : [], CT.length ? [['content', 'תוכן הסוגיה']] : []);
-  return opts.length > 1 ? '<div class="field"><span class="label">על מה החידון</span><div class="seg grid2" id="qmode">' + opts.map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>' : '';
+  const opts = [['words', KINDS.words]].concat(CN.length ? [['concepts', KINDS.concepts]] : [], CT.length ? [['content', 'תוכן הסוגיה']] : []);
+  return opts.length > 1 ? '<div class="field"><span class="label">על מה החידון</span><div class="seg" id="qmode">' + opts.map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>' : '';
 }
 function bindMode() {
   bindSeg('qmode', v => {
@@ -1221,20 +1247,17 @@ function renderTQ() {
 let game = null;
 const gameCfg = { scope: 'all', kind: 'words' };
 function renderGames() {
-  const cn = gameCfg.kind === 'concepts' && CN.length > 0, bm = cn ? S.best.cmatch : S.best.match, bb = S.best.blitz, bf = S.best.fill;
-  view.innerHTML = '<h2>משחקי תרגול</h2>' + scopeControl(gameCfg.scope, 'gscope') +
-    (CN.length ? '<div class="field"><span class="label">התאמת זוגות על</span>' + kindSeg('gkind', cn ? 'concepts' : 'words') + '</div>' : '') +
-    '<div class="menu">' +
-    '<button id="g-match"><b>התאמת זוגות</b><span>' + (cn ? 'לחבר שישה מושגים להגדרה שלהם, כמה שיותר מהר' : 'לחבר שש מילים בארמית לפירוש שלהן, כמה שיותר מהר') + '</span>' + (bm ? '<em>שיא: ' + bm + ' שנ\'</em>' : '') + '</button>' +
+  const bm = S.best.match, bb = S.best.blitz, bf = S.best.fill;
+  gameCfg.scope = 'all'; gameCfg.kind = 'words';
+  view.innerHTML = '<h2>משחקים</h2><div class="menu">' +
+    '<button id="g-xw"><b>תשחץ אישי</b><span>לוח חדש מהמילים שתבחר: כל המאגר, מה שלמדת או לפי פרקים, וברמת הקושי שתבחר</span></button>' +
+    '<button id="g-match"><b>התאמת זוגות</b><span>לחבר שש מילים בארמית לפירוש שלהן, כמה שיותר מהר</span>' + (bm ? '<em>שיא: ' + bm + ' שנ\'</em>' : '') + '</button>' +
     '<button id="g-blitz"><b>אתגר 60 שניות</b><span>לזהות כמה שיותר מילים לפני שהזמן נגמר, עם ניקוד ורצף</span>' + (bb ? '<em>שיא: ' + bb + '</em>' : '') + '</button>' +
-    '<button id="g-wordle"><b>וורדל מסכת שבת</b><span>מילה יומית בת חמש אותיות, שש הזדמנויות. אותה מילה לכל הישיבה</span></button>' +
     '<button id="g-fill"><b>השלמת ביטויים</b><span>ביטוי של שקלא וטריא עם מילה חסרה. איזו מילה משלימה אותו?</span>' + (bf ? '<em>שיא: ' + bf + '/10</em>' : '') + '</button></div>';
-  bindSeg('gscope', v => { gameCfg.scope = v; renderGames(); });
-  bindSeg('gkind', v => { gameCfg.kind = v; renderGames(); });
+  $('g-xw').onclick = () => nav('xw', 'setup');
   $('g-match').onclick = () => startMatch();
   $('g-blitz').onclick = () => startBlitz();
   $('g-fill').onclick = () => startFill();
-  $('g-wordle').onclick = startWordle;
 }
 function noteMistake(e, picked) { const g = game; g.mistakes = g.mistakes || []; if (!g.mistakes.some(m => m.e === e)) g.mistakes.push({ e, picked }); }
 /* the games keep moving: from the whole store they leave out the rare words */
@@ -1385,8 +1408,12 @@ function xwLetters(s) { return String(s).replace(/[\u0591-\u05C7]/g, '').replace
 function xwAns(e) { return norm(xwLetters(e.w)).split(''); }
 /* a phrase of several words gets its letter count per word, as in a printed crossword: (3, 2) */
 function xwSplit(e) { const p = e.w.trim().split(/\s+/); return p.length > 1 ? ' (' + p.map(x => xwLetters(x).length).join(', ') + ')' : ''; }
-function xwClue(e) { return (e.cn || e.xe ? e.s : short(e)) + xwSplit(e); }
-function xwDef(e) { return (e.cn || e.xe ? e.s : gloss(e)) + xwSplit(e); }
+/* a definition rewritten for the crossword (xwclues.js) replaces one that shows the answer or is too short to solve;
+   the dictionary keeps the original */
+const XWC = window.XW_CLUES || {};
+function xwOv(e) { return XWC[xwSrc(e) + ':' + e.w]; }
+function xwClue(e) { return (xwOv(e) || (e.cn || e.xe ? e.s : short(e))) + xwSplit(e); }
+function xwDef(e) { return (xwOv(e) || (e.cn || e.xe ? e.s : gloss(e))) + xwSplit(e); }
 /* a board from its word list: [source, index, arrow, clue cell] on R rows and C columns */
 function xwFromRefs(R, C, refs) {
   const L = new Array(R * C).fill(''), K = new Array(R * C).fill(null), words = [];
@@ -1412,7 +1439,7 @@ function xwDailyBoard(day) {
   if (b) { b.theme = d.theme; b.anchor = true; b.ed = ed; }
   return b;
 }
-/* each board allows three hints (one letter each) and three error checks */
+/* each board allows three hints (one letter each); the board checks itself once it is full */
 const XW_HINTS = 3, XW_CHECKS = 3;
 const XN = 9;
 /* the answer must not show in its own definition: a whole word of the definition, once the prefixes ה ו ב ל כ מ ש
@@ -1431,10 +1458,22 @@ function answerInGloss(ans, text) {
   const toks = (String(text).match(/[\u05d0-\u05ea]+/g) || []).map(norm);
   return toks.some(t => { const f = forms(t); return words.some(ws => [...ws].some(w => f.has(w))); });
 }
+/* for each letter of a word as written: F a final letter, R one of כ מ נ פ צ written plain, a dot for the rest.
+   A final letter may stand only where the crossing word ends too, written final (the same rule as tools/make-daily.js) */
+/* a definition that cannot be solved without guessing: only small words, or for two or three letters fewer than two words of content */
+const XSMALL = new Set(('של על אל את עם מן לו לה להם להן לנו לי לך לכם אותו אותה אותם אותן אותי אותנו זה זו זאת זהו זוהי אלה אלו הוא היא הם הן ' +
+  'אני אנחנו אתה אתם גם אף אם כי כאשר כש כמו אך רק לא אין יש הרי האם וכי מה מי איך כך כן כאן שם עוד כבר אז עד בין אחר אחרי לפני ' +
+  'ש ה ו ב ל מ כ ד שהוא שהיא שלו שלה שלהם עליו עליה עליהם ממנו ממנה בו בה בהם לפי אצל').split(' '));
+function xwVague(ans, clue) {
+  const toks = (String(clue).replace(/\([^)]*\)/g, ' ').match(/[\u05d0-\u05ea"׳״']+/g) || []).map(t => t.replace(/["׳״']/g, ''));
+  const content = toks.filter(t => !XSMALL.has(t));
+  return !content.length || (norm(xwLetters(ans)).length <= 3 && content.length < 2);
+}
 /* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
    The level ranks the chosen store by frequency, and every word of the expanded store counts as hard */
-const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && short(e).length <= 34 && !answerInGloss(e.w, e.m0) && !(e.ext && /בעל כמה פירושים/.test(e.m0)));
-BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && e.s.length <= 40 && !answerInGloss(e.w, e.s)) XW_ALL.push(e); });
+const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t); };
+const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && !(e.ext && /בעל כמה פירושים/.test(e.m0)) && xwOk(e, e.cn ? e.s : short(e), 34));
+BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && xwOk(e, e.s, 40)) XW_ALL.push(e); });
 const XW_CORE = XW_ALL.filter(e => !e.ext && !e.bk);
 const XW_RANK = new Map(XW_CORE.slice().sort((x, y) => y.c - x.c).map((e, i) => [e, i / Math.max(1, XW_CORE.length - 1)]));
 XW_ALL.forEach(e => { if (e.ext) XW_RANK.set(e, 1); else if (e.bk) XW_RANK.set(e, 0.5); });
@@ -1456,7 +1495,7 @@ function xwSrcOk(e, k) {
   if (xwCfg.src === 'pk') return k === undefined ? (!xwCfg.pereks.length || xwCfg.pereks.some(p => e.pkm & (1 << p))) : !!(e.pkm & (1 << k));
   return true;
 }
-function xwPool() { return XW_ALL.filter(e => xwSrcOk(e) && xwLevelOk(e)); }
+function xwPool() { return XW_ALL.filter(e => xwSrcOk(e) && xwLevelOk(e) && (SC.by !== 'daf' || xwCfg.src !== 'all' || (!e.bk && inScope(e)))); }
 
 /* where a word sits: its cells in reading order, and the cell before its start and after its end */
 function xwCells(t, cr, cc, n) {
@@ -1525,7 +1564,7 @@ function xwTry(cands) {
     }
     return best;
   }
-  const items = cands.map(e => ({ e, w: norm(e.w).split('') }));
+  const items = cands.map(e => { const w = norm(e.w).split(''); return { e, w }; });
   for (let pass = 0; pass < 2 && words.length < 17; pass++) {
     const before = words.length;
     for (const it of items) {
@@ -1574,7 +1613,7 @@ function xwBuild(src, done, day) {
 /* the board in progress is kept on the device, so closing the app and opening it again carries on from the same point */
 const XKEY = 'aramit-shabbat-xw';
 function xwSave() {
-  const g = xg; if (!g || g.type !== 'xw') return;
+  const g = xg; if (!g || g.type !== 'xw' || g.arch) return;
   const o = { v: 2, R: g.b.R, C: g.b.C, day: g.day || '', ed: g.b.ed || 0, theme: g.b.theme || '', anchor: !!g.b.anchor, words: g.b.words.map(w => [xwSrc(w.e), w.e.i, w.t, w.clue]), typed: g.typed, hint: [...g.hint], bad: [...g.bad],
     wrongW: [...g.wrongW], hintW: [...g.hintW], act: g.act, cur: g.cur, secs: g.secs || 0, checks: g.checks || 0, open: !!g.open, done: !!g.done };
   try { localStorage.setItem(XKEY, JSON.stringify(o)); } catch (e) { /* storage full or blocked */ }
@@ -1603,12 +1642,8 @@ function mmss(n) { return two(Math.floor(n / 60)) + ':' + two(n % 60); }
 
 /* the top of the setup: the daily board, and the saved board if there is one */
 function xwTopHtml() {
-  const day = localDay(), d = S.settings.xwDaily && S.settings.xwDaily.day === day ? S.settings.xwDaily : null, sv = xwLoad();
-  const svDaily = sv && sv.day === day && sv.b.anchor;
-  const tb = xwDailyBoard(day);
-  return '<button class="xdaily" id="xw-daily"><b>תשחץ יומי' + (tb ? ' #' + tb.ed : '') + '</b>' + (tb ? '<span>' + esc(tb.theme) + '</span>' : '') + '<span>' + (d ? 'פתרת היום ב-' + mmss(d.secs) + xwAids(d.hints || 0, d.checks || 0) + '. אפשר לפתור שוב.' : svDaily ? 'התחלת אותו היום. להמשיך מ-' + mmss(sv.secs) : 'אותו לוח לכל הישיבה') + '</span></button>' +
-    (d && tb ? '<button class="btn line wide" id="xw-dshare">שתף תוצאה</button>' : '') +
-    (sv && !svDaily ? '<button class="btn ghost wide" id="xw-resume">המשך הלוח השמור (' + mmss(sv.secs) + ')</button>' : '');
+  const sv = xwLoad();
+  return sv && !sv.b.anchor ? '<button class="btn ghost wide" id="xw-resume">המשך הלוח השמור (' + mmss(sv.secs) + ')</button>' : '';
 }
 /* the setup: where the words come from, and how hard they are */
 function renderXWSetup() {
@@ -1616,9 +1651,9 @@ function renderXWSetup() {
   let sub = '';
   if (xwCfg.src === 'pk') sub = '<div class="pkgrid" id="xw-pk"><button data-v="-1" aria-pressed="' + (xwCfg.pereks.length === 0) + '"><span>כל הפרקים</span></button>' +
     PEREKS.map((pk, k) => { const c = lvPool.filter(e => xwSrcOk(e, k)).length; return '<button data-v="' + k + '" aria-pressed="' + (xwCfg.pereks.indexOf(k) >= 0) + '"' + (c ? '' : ' disabled') + '><span>' + ordPk(k) + '. ' + esc(pk[0]) + '</span><b>' + c + '</b></button>'; }).join('') + '</div>';
-  view.innerHTML = '<h2>תשחץ</h2>' +
+  view.innerHTML = '<div class="row between"><h2>תשחץ אישי</h2><button class="link" id="xw-back">חזרה למשחקים</button></div>' +
     xwTopHtml() +
-    '<p class="small muted">או לוח אישי: בחר מאגר מילים ורמת קושי.</p>' +
+    '<p class="small muted">בחר מאגר מילים ורמת קושי.' + (SC.by === 'daf' ? ' מכל המאגר נלקחות רק מילים מהדפים שאתה אוחז בהם (' + esc(holdLabel()) + ').' : '') + '</p>' +
     '<div class="field"><span class="label">מאגר מילים</span><div class="seg" id="xw-src">' +
     [['all', 'כל המילים'], ['learned', 'שנלמדו'], ['pk', 'לפי פרקים']].map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (xwCfg.src === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>' +
     '<div class="field"><span class="label">רמת קושי</span><div class="seg" id="xw-lv">' + Object.keys(XW_LV).map(k => '<button data-v="' + k + '" aria-pressed="' + (xwCfg.lv === k) + '">' + XW_LV[k] + '</button>').join('') + '</div></div>' + sub +
@@ -1635,8 +1670,7 @@ function renderXWSetup() {
     done();
   }; });
   $('xw-go').onclick = () => startXW();
-  $('xw-daily').onclick = startXWDaily;
-  const ds = $('xw-dshare'); if (ds) ds.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
+  $('xw-back').onclick = goBack;
   const rs = $('xw-resume'); if (rs) rs.onclick = () => { const sv = xwLoad(); if (sv) xwOpen(sv); else { toast('הלוח השמור לא נמצא'); renderXWSetup(); } };
 }
 const XW_MIN_POOL = 25;
@@ -1657,6 +1691,22 @@ function startXW() {
 /* the daily board: all words, every level, the same for everyone on the same date */
 /* a daily board left open past midnight: it is closed, so the day that ended keeps its record and today starts clean */
 function xwStale() { return !!(xg && xg.type === 'xw' && xg.day && xg.b.anchor && !xg.done && xg.day !== localDay()); }
+/* the archive: every edition from #1 to yesterday, to solve again; a board or word solved here does not touch the streak or lifelines */
+function openArchive() {
+  const day = localDay(), ed = xwEdition(day), arch = S.settings.arch || { xw: {}, wd: {} }, rows = [];
+  for (let n = ed - 1; n >= 1; n--) {
+    const d = new Date(window.DAILY.epoch + 'T12:00:00'); d.setDate(d.getDate() + n - 1);
+    const dd = dayOf(d), b = xwDailyBoard(dd);
+    rows.push('<div class="arow"><div><b>#' + n + '</b> <span class="small muted">' + dd.split('-').reverse().join('.') + '</span><br><span class="small">' + esc(b ? b.theme : '') + '</span></div>' +
+      '<button class="btn line" data-axw="' + dd + '">תשחץ' + (arch.xw[n] ? ' ✓' : '') + '</button><button class="btn line" data-awd="' + dd + '">וורדל' + (arch.wd[n] ? ' ✓' : '') + '</button></div>');
+  }
+  openSheet('<div class="row between"><h2>ארכיון 📅</h2><button class="link" id="ar-close">סגירה</button></div>' +
+    '<p class="small muted">מהדורות קודמות, מ-#1 ועד אתמול. פתרון כאן לא משנה את הרצף 🔥 ואת חבלי ההצלה 🛡️.</p>' +
+    (rows.length ? '<div class="alist">' + rows.join('') + '</div>' : '<p>עוד אין מהדורות קודמות. מחר תופיע כאן המהדורה של היום.</p>'));
+  $('ar-close').onclick = closeSheet;
+  document.querySelectorAll('#sheet [data-axw]').forEach(b => { b.onclick = () => { closeSheet(); const dd = b.dataset.axw, bd = xwDailyBoard(dd); if (!bd) return; const g = xwGame(bd); g.arch = dd; xwOpen(g); }; });
+  document.querySelectorAll('#sheet [data-awd]').forEach(b => { b.onclick = () => { closeSheet(); const g = wdFor(b.dataset.awd, true); if (g) { wd = g; nav('games', 'wordle'); } }; });
+}
 function startXWDaily() {
   const day = localDay(), saved = xwLoad();
   if (saved && saved.day === day && saved.b.anchor) { xwOpen(saved); return; }
@@ -1705,10 +1755,10 @@ function xwBoardHtml() {
     const k = r * b.C + c;
     if (b.L[k]) {
       const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (anchor.has(k) ? ' anchor' : '') + (xwLocked(k) ? ' lock' : '');
-      h += '<button class="' + cls + '" data-k="' + k + '" aria-label="משבצת">' + esc(g.typed[k]) + '</button>';
+      h += '<button class="' + cls + '" data-k="' + k + '" aria-label="משבצת">' + esc(norm(g.typed[k])) + '</button>';
     } else if (b.K[k]) {
       const ks = b.K[k].slice().sort((x, y) => (XLEFT[y.t] ? 1 : 0) - (XLEFT[x.t] ? 1 : 0)), two = ks.length > 1;
-      h += '<button class="cell-clue' + (ks.some(x => x.wi === g.act) ? ' kon' : '') + (two ? ' two' : '') + '" data-k="' + k + '">' +
+      h += '<button class="cell-clue' + (ks.some(x => x.wi === g.act) ? ' kon' : '') + (two ? ' two' : '') + (ks.every(x => xwSolved(b.words[x.wi])) ? ' solved' : '') + '" data-k="' + k + '">' +
         ks.map(x => {
           const side = XLEFT[x.t] ? 'side-l' : 'side-b';
           return '<span class="xq ' + side + (x.wi === g.act ? ' sel' : '') + (xwSolved(b.words[x.wi]) ? ' done' : '') + '" data-t="' + x.t + '" data-wi="' + x.wi + '">' +
@@ -1718,24 +1768,39 @@ function xwBoardHtml() {
   }
   return h;
 }
-/* each definition gets the largest type that shows it whole in its block, so a short word is never cut;
-   only a text too long even at the smallest size ends with an ellipsis. The sizes are kept for the board */
+/* each definition gets the largest type that shows it whole in its block, so no word is ever cut. When even the smallest
+   readable size is too large, the cell takes a shorter form of the definition: first without what is in brackets, then
+   only its first part (up to a comma, semicolon or colon); the bar above the board always shows it in full.
+   The sizes and the forms chosen are kept for the board */
+function xwShorter(t) {
+  const m = /\s\((\d+(?:, \d+)*)\)$/.exec(t), tail = m ? m[0] : '', body = m ? t.slice(0, -tail.length) : t, out = [t];
+  const a = body.replace(/\s*\([^)]*\)/g, '').trim(); if (a && a !== body) out.push(a + tail);
+  const k = a.search(/[,;:]/); if (k >= 6) out.push(a.slice(0, k).trim() + tail);
+  return out;
+}
 function xwFitClues() {
   const g = xg, grid = $('xw-grid'); if (!grid) return;
   const key = grid.offsetWidth + 'x' + grid.offsetHeight; if (g._fsAt !== key) { g._fs = {}; g._fsAt = key; }
   grid.querySelectorAll('.xq').forEach(q => {
-    const em = q.firstChild, wi = q.dataset.wi, two = q.parentNode.classList.contains('two');
-    let fs = g._fs[wi];
-    if (fs) { em.style.fontSize = fs + 'px'; if (fs < 0) em.classList.add('clip'); return; }
+    /* a solved definition keeps room for its ✓, so its size is worked out again once it is solved */
+    const em = q.firstChild, wi = q.dataset.wi + (q.classList.contains('done') ? 'd' : ''), two = q.parentNode.classList.contains('two');
+    const kept = g._fs[wi];
+    if (kept) { em.textContent = kept.t; em.style.fontSize = kept.fs + 'px'; if (kept.clip) em.classList.add('clip'); return; }
     const cs = getComputedStyle(q), H = q.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-    fs = two ? 9.5 : 10.5;
-    for (;;) {
-      em.style.fontSize = fs + 'px';
-      if (em.getBoundingClientRect().height <= H + 0.5 && em.scrollWidth <= em.clientWidth + 0.5) break;
-      if (fs <= 6.5) { em.classList.add('clip'); break; }
-      fs -= 0.5;
+    const fits = () => em.getBoundingClientRect().height <= H + 0.5 && em.scrollWidth <= em.clientWidth + 0.5;
+    const forms = xwShorter(em.textContent);
+    let got = null;
+    /* the full text down to 7px, then the shorter forms down to 7px, then everything down to 6px */
+    for (const min of [7, 6]) {
+      for (const t of forms) {
+        em.textContent = t;
+        for (let fs = two ? 9.5 : 10.5; fs >= min; fs -= 0.5) { em.style.fontSize = fs + 'px'; if (fits()) { got = { t, fs }; break; } }
+        if (got) break;
+      }
+      if (got) break;
     }
-    g._fs[wi] = fs;
+    if (!got) { got = { t: forms[forms.length - 1], fs: 6, clip: true }; em.textContent = got.t; em.style.fontSize = '6px'; em.classList.add('clip'); }
+    g._fs[wi] = got;
   });
 }
 /* the live bar over the board: the definition of the selected word with its length (or the lengths of a phrase),
@@ -1744,15 +1809,23 @@ function xwFitClues() {
 function xwBarHtml() {
   const g = xg, w = g.b.words[g.act], e = w.e;
   const parts = e.w.trim().split(/\s+/).map(x => xwLetters(x).length).filter(n => n > 0);
-  const def = e.cn || e.xe ? e.s : gloss(e), len = parts.length > 1 ? parts.join(', ') : w.cells.length + ' אותיות';
+  const def = xwOv(e) || (e.cn || e.xe ? e.s : gloss(e)), len = parts.length > 1 ? parts.join(', ') : w.cells.length + ' אותיות';
   let live = '', at = 0, gaps = new Set(); parts.slice(0, -1).forEach(n => { at += n; gaps.add(at); });
   w.cells.forEach((k, i) => {
     if (gaps.has(i)) live += '<i class="gap"></i>';
     const ch = g.typed[k] ? (i === w.cells.length - 1 || gaps.has(i + 1) ? xwFinal(norm(g.typed[k])) : norm(g.typed[k])) : '_';
     live += '<i data-k="' + k + '" class="' + (k === g.cur ? 'cur ' : '') + (g.bad.has(k) ? 'bad ' : '') + (g.hint.has(k) ? 'hint' : '') + '">' + esc(ch) + '</i>';
   });
-  return '<p class="xdef"><b>' + esc(def) + '</b> <span>(' + len + ')</span></p><div class="xlive" dir="rtl">' + live + '</div>';
+  /* a word solved shows a green ✓ beside its letters; a word with a letter marked wrong by a check shows a red ✗ */
+  const full = w.cells.every(k => g.typed[k]);
+  const mark = xwSolved(w) ? '<b class="xmark ok" aria-label="המילה נכונה">✓</b>' : full || w.cells.some(k => g.bad.has(k)) ? '<b class="xmark no" aria-label="יש במילה טעות">✗</b>' : '';
+  return '<p class="xdef"><b>' + esc(def) + '</b> <span>(' + len + ')</span></p><div class="xlive" dir="rtl">' + live + '</div>' + mark;
 }
+/* the pin: an open lock while typing moves on, a closed one while the cursor stays in its cell */
+const XLOCK = {
+  off: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.6-1.7"/></svg>',
+  on: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+};
 function xwFinal(ch) { return ({ 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' })[ch] || ch; }
 /* the bar keeps one height: a long definition takes smaller type until it fits its two lines, so the board never moves */
 function xwFitBar() {
@@ -1768,7 +1841,7 @@ function renderXW() {
     '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
     '<div class="xlow">' +
-    '<div class="xtools"><button id="xw-hint"></button><button id="xw-check"></button><button id="xw-clear">ניקוי מילה 🗑️</button><button class="pin" id="xw-pin"></button></div>' +
+    '<div class="xtools"><button id="xw-hint"></button><button id="xw-clear">ניקוי מילה 🗑️</button><button class="pin" id="xw-pin"></button></div>' +
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
   xwPaint(); xwFit(); xwFitClues();
@@ -1781,7 +1854,6 @@ function renderXW() {
   view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => xwType(b.dataset.ch); });
   $('xw-del').onclick = xwDel;
   $('xw-hint').onclick = xwHint;
-  $('xw-check').onclick = xwCheck;
   $('xw-clear').onclick = xwClear;
   $('xw-pin').onclick = () => { S.settings.xwPin = !S.settings.xwPin; save(); xwPaint(); };
 }
@@ -1814,14 +1886,13 @@ function xwPaint() {
   const g = xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
   $('xw-grid').innerHTML = xwBoardHtml();
   $('xw-bar').innerHTML = xwBarHtml(); xwFitBar();
-  const hl = XW_HINTS - g.hint.size, cl = XW_CHECKS - (g.checks || 0), hb = $('xw-hint'), cb = $('xw-check');
+  const hl = XW_HINTS - g.hint.size, hb = $('xw-hint');
   hb.textContent = 'רמז (' + hl + ') 💡'; hb.disabled = hl <= 0 || g.done;
-  cb.textContent = 'בדיקה (' + cl + ') ✓'; cb.disabled = cl <= 0 || g.done;
   const pb = $('xw-pin'), pin = !!S.settings.xwPin;
-  pb.textContent = pin ? '🔒' : '🔓'; pb.classList.toggle('on', pin); pb.setAttribute('aria-pressed', String(pin));
+  pb.innerHTML = pin ? XLOCK.on : XLOCK.off; pb.classList.toggle('on', pin); pb.setAttribute('aria-pressed', String(pin));
   pb.setAttribute('aria-label', pin ? 'הסמן נעול במשבצת: הקלדה מחליפה את האות בלי להתקדם' : 'נעילת הסמן במשבצת');
   xwFitClues();
-  $('xw-left').textContent = (g.day && g.b.anchor ? '#' + g.b.ed + ' ' + g.b.theme + ', ' : g.b.words.length + ' מילים, ') + (left ? 'נשארו ' + left : 'הלוח מלא');
+  $('xw-left').textContent = (g.arch ? '#' + g.b.ed + ' (ארכיון) ' + g.b.theme + ', ' : g.day && g.b.anchor ? '#' + g.b.ed + ' ' + g.b.theme + ', ' : g.b.words.length + ' מילים, ') + (left ? 'נשארו ' + left : 'הלוח מלא');
   /* anything that changed height on this paint (a line of text that wrapped) must not push the keyboard under the tab bar */
   const kb = view.querySelector('.xkb'), tabs = document.getElementById('tabs'), grid = $('xw-grid');
   if (kb && tabs && grid && grid.style.width && kb.getBoundingClientRect().bottom > tabs.getBoundingClientRect().top + 1) xwFit();
@@ -1846,6 +1917,7 @@ function xwStep(dir) {
   if (j >= 0 && j < w.cells.length) xg.cur = w.cells[j];
 }
 function xwType(ch) {
+  ch = norm(ch);   /* ך ם ן ף ץ are taken as כ מ נ פ צ: the board shows plain letters, the bar the word as written */
   if (xwStale()) { render(false); return; }
   const g = xg, w = g.b.words[g.act];
   if (g.done) return;
@@ -1899,29 +1971,24 @@ function xwHint() {
   g.typed[k] = xwShow(w, k); g.hint.add(k); g.bad.delete(k); g.hintW.add(g.act);
   xwPaint(); xwSave(); xwDone();
 }
-function xwCheck() {
-  const g = xg; let n = 0;
-  if (g.done) return;
-  if ((g.checks || 0) >= XW_CHECKS) { toast('נוצלו כל ' + XW_CHECKS + ' הבדיקות של הלוח'); return; }
-  g.checks = (g.checks || 0) + 1;
-  g.b.L.forEach((ch, k) => { if (ch && g.typed[k] && norm(g.typed[k]) !== ch) { g.bad.add(k); n++; g.cw[k].forEach(i => g.wrongW.add(i)); } });
-  g.wrongW.forEach(i => { if (!g.b.words[i].e.xe) noteAnswer(g.b.words[i].e, false); }); save();
-  xwPaint(); xwSave();
-  toast(n ? (n === 1 ? 'משבצת אחת שגויה' : n + ' משבצות שגויות') + ', מסומנות באדום' : 'אין שגיאות במה שמילאת');
-}
 function xwDone() {
   const g = xg, b = g.b;
   const full = b.L.every((ch, k) => !ch || g.typed[k]);
   if (!full) return;
-  if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) { toast('הלוח מלא, אבל יש בו שגיאות. בדיקת שגיאות תסמן אותן'); return; }
+  /* the board checks itself: once it is full, a wrong letter turns red and its words count as mistakes */
+  if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) {
+    let n = 0; b.L.forEach((ch, k) => { if (ch && norm(g.typed[k]) !== ch) { g.bad.add(k); n++; g.cw[k].forEach(i => g.wrongW.add(i)); } });
+    xwPaint(); xwSave(); toast('הלוח מלא, אבל ' + (n === 1 ? 'משבצת אחת שגויה' : n + ' משבצות שגויות') + '. הן מסומנות באדום'); return;
+  }
   g.done = true; xwStopClock();
   g.mistakes = [...new Set([...g.wrongW, ...g.hintW])].map(i => ({ e: b.words[i].e, picked: null }));
-  if (g.day) {
+  if (g.arch) { const a = S.settings.arch || { xw: {}, wd: {} }; a.xw[g.b.ed] = g.secs || 1; S.settings.arch = a; save(); }
+  else if (g.day) {
     S.settings.xwDaily = { day: g.day, secs: g.secs, hints: g.hint.size, checks: g.checks || 0 };
     const days = (S.settings.xwDays || []).filter(d => d !== g.day).concat([g.day]).sort().slice(-400);
     S.settings.xwDays = days; save();
   }
-  xwForget(); xwPaint(); xwSummary();
+  if (!g.arch) xwForget(); xwPaint(); xwSummary();
 }
 function renderXWReview() {
   const ms = xg.mistakes || [];
@@ -1934,7 +2001,7 @@ function renderXWReview() {
 function nWrongCells(n) { return n === 1 ? 'משבצת אחת שגויה' : n + ' משבצות שגויות'; }
 function xwWrong() { const g = xg; return g.b.L.reduce((n, ch, k) => n + (ch && g.typed[k] && norm(g.typed[k]) !== ch ? 1 : 0), 0); }
 /* "בלי רמזים ובדיקות", or the two counts in brackets */
-function xwAids(h, c) { return h || c ? ' (רמזים: ' + h + ', בדיקות: ' + c + ')' : ', בלי רמזים ובדיקות'; }
+function xwAids(h) { return h ? ' (רמזים: ' + h + ')' : ', בלי רמזים'; }
 /* the result of the daily board, the same words the summary shares, from the record kept for the day */
 function dailyShareText(b, secs, hints, checks, day) {
   const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
@@ -1957,8 +2024,8 @@ function xwMore(e) {
 function xwSummary() {
   const g = xg, wrong = g.done ? 0 : xwWrong(), h = g.hint.size;
   const words = g.b.words.slice().sort((x, y) => x.clue - y.clue);
-  openSheet('<h2>' + (g.done ? (g.day ? 'פתרת את התשחץ היומי' + (g.b.anchor ? ' #' + g.b.ed : '') : 'פתרת את הלוח') : 'הלוח מלא') + '</h2>' +
-    '<div class="stats four"><div class="stat"><b>' + mmss(g.secs || 0) + '</b><span>זמן</span></div><div class="stat"><b>' + g.b.words.length + '</b><span>מילים</span></div><div class="stat"><b>' + h + '</b><span>רמזים</span></div><div class="stat"><b>' + (g.checks || 0) + '</b><span>בדיקות</span></div></div>' +
+  openSheet('<h2>' + (g.done ? (g.arch ? 'פתרת את מהדורה #' + g.b.ed + ' מהארכיון' : g.day ? 'פתרת את התשחץ היומי' + (g.b.anchor ? ' #' + g.b.ed : '') : 'פתרת את הלוח') : 'הלוח מלא') + '</h2>' +
+    '<div class="stats"><div class="stat"><b>' + mmss(g.secs || 0) + '</b><span>זמן</span></div><div class="stat"><b>' + g.b.words.length + '</b><span>מילים</span></div><div class="stat"><b>' + h + '</b><span>רמזים</span></div></div>' +
     (wrong ? '<p class="small strong">יש בלוח ' + nWrongCells(wrong) + '. בדיקת שגיאות תסמן ' + (wrong === 1 ? 'אותה' : 'אותן') + '.</p>' : '') +
     (g.b.anchor ? '<p class="small muted">' + esc('#' + g.b.ed + ', ' + g.b.theme) + '</p>' : '') +
     '<div class="review xwlist">' + words.map(w => '<div' + (g.b.anchor && w === g.b.words[0] ? ' class="anc"' : '') + '><b>' + esc(w.e.w) + '</b> <span>' + esc(xwDef(w.e)) + '</span>' + xwMore(w.e) + '</div>').join('') + '</div>' +
@@ -2028,14 +2095,16 @@ function wdScore(g, ans) {
   for (let i = 0; i < 5; i++) if (out[i] !== 'g' && left[g[i]]) { out[i] = 'y'; left[g[i]]--; }
   return out;
 }
-function wdToday() {
-  const day = localDay(), refs = (window.DAILY && window.DAILY.wordle) || []; if (!refs.length) return null;
+function wdToday() { return wdFor(localDay(), false); }
+function wdFor(day, arch) {
+  const refs = (window.DAILY && window.DAILY.wordle) || []; if (!refs.length) return null;
   const ed = xwEdition(day), r = refs[(ed - 1) % refs.length], e = xwEntry(r[0], r[1]); if (!e) return null;
-  const g = { day, ed, e, ans: xwAns(e).join(''), rows: [], cur: '', hint: false, done: false, won: false };
+  const g = { day, ed, e, ans: xwAns(e).join(''), rows: [], cur: '', hint: false, done: false, won: false, arch: !!arch };
+  if (arch) return g;
   try { const o = JSON.parse(localStorage.getItem(WKEY) || 'null'); if (o && o.day === day && o.ans === g.ans) Object.assign(g, { rows: o.rows || [], hint: !!o.hint, done: !!o.done, won: !!o.won }); } catch (x) { /* a fresh start */ }
   return g;
 }
-function wdSave() { try { localStorage.setItem(WKEY, JSON.stringify({ day: wd.day, ans: wd.ans, rows: wd.rows, hint: wd.hint, done: wd.done, won: wd.won })); } catch (x) { /* storage blocked */ } }
+function wdSave() { if (wd && wd.arch) return; try { localStorage.setItem(WKEY, JSON.stringify({ day: wd.day, ans: wd.ans, rows: wd.rows, hint: wd.hint, done: wd.done, won: wd.won })); } catch (x) { /* storage blocked */ } }
 function wdChapter(e) {
   if (e.bk) return 'מושג יסוד: ' + ((window.BANK_TOPICS || [])[e.t] || '');
   if (e.xe) return 'מונח כללי בהלכות שבת, לא מפרק אחד';
@@ -2057,7 +2126,7 @@ function renderWordle() {
   g.rows.forEach(w => wdScore(w, g.ans).forEach((v, i) => { const c = w[i]; if (!st[c] || rank[v] > rank[st[c]]) st[c] = v; }));
   const keyCls = ch => { const v = st[norm(ch)]; return v ? ' class="k-' + v + '"' : ''; };
   const end = g.done ? wdEndHtml() : '';
-  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">סיום</button></span></div>' +
+  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : '') + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">סיום</button></span></div>' +
     (g.hint ? '<p class="small wclue">💡 ' + esc(wdChapter(g.e)) + '</p>' : '') +
     '<div class="wgrid" id="wd-grid" dir="rtl">' + rows.join('') + '</div>' + end +
     (g.done ? '' : '<div class="xlow"><div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
@@ -2084,7 +2153,7 @@ function wdFit() {
   grid.style.setProperty('--wt', t + 'px');
 }
 /* the word of a day that has ended gives way to today's word as soon as the reader touches the board */
-function wdRoll() { if (wd && wd.day !== localDay()) { wd = wdToday(); if (wd) { renderWordle(); toast('התחיל יום חדש: זו המילה של היום'); } return true; } return false; }
+function wdRoll() { if (wd && !wd.arch && wd.day !== localDay()) { wd = wdToday(); if (wd) { renderWordle(); toast('התחיל יום חדש: זו המילה של היום'); } return true; } return false; }
 function wdType(ch) { if (wdRoll()) return; const g = wd; if (g.done || g.cur.length >= 5) return; g.cur += norm(ch); renderWordle(); }
 function wdDel() { if (wdRoll()) return; const g = wd; if (g.done) return; g.cur = g.cur.slice(0, -1); renderWordle(); }
 function wdEnter() {
@@ -2095,7 +2164,8 @@ function wdEnter() {
   g.rows.push(g.cur); g.cur = '';
   if (g.rows[g.rows.length - 1] === g.ans) { g.done = true; g.won = true; }
   else if (g.rows.length >= 6) g.done = true;
-  if (g.done) {
+  if (g.done && g.arch) { const a = S.settings.arch || { xw: {}, wd: {} }; if (g.won) a.wd[g.ed] = g.rows.length; S.settings.arch = a; save(); }
+  else if (g.done) {
     S.settings.wdLast = { day: g.day, n: g.rows.length, won: g.won, hint: g.hint };
     if (g.won) S.settings.wdDays = (S.settings.wdDays || []).filter(d => d !== g.day).concat([g.day]).sort().slice(-400);
     save();
@@ -2116,12 +2186,41 @@ function wdShareText() {
   return 'וורדל מסכת שבת #' + g.ed + ' ' + (g.won ? g.rows.length : 'X') + '/6' + (n ? ' 🔥' + n : '') + (g.hint ? ', עם רמז פרק' : '') + '\n' +
     g.rows.map(w => '‏' + wdScore(w, g.ans).map(v => sq[v]).join('')).join('\n') + (link ? '\n' + link : '');
 }
-/* days in a row from a list of days, counting back from today, or from yesterday while today is still open */
-function streakOf(list, extra) {
+/* the streak with its lifelines (🛡️), worked out afresh from the list of solved days, so it never drifts.
+   Each challenge holds up to two lifelines and starts with two. One calendar day missed uses a lifeline and the streak goes on;
+   two days missed in a row, or a missed day with no lifeline left, end it. Every 7 days solved in a row bring one lifeline back.
+   Today does not count as missed while it is still open */
+function streakInfo(list, extra) {
   const days = new Set(list || []); if (extra) days.add(extra);
-  const d = new Date(); if (!days.has(dayOf(d))) d.setDate(d.getDate() - 1);
-  let n = 0; while (days.has(dayOf(d))) { n++; d.setDate(d.getDate() - 1); }
-  return n;
+  const out = { n: 0, shields: 2, used: [] };
+  if (!days.size) return out;
+  const first = [...days].sort()[0], d = new Date(first + 'T12:00:00'), end = localDay();
+  let run = 0, miss = 0;
+  for (let k = 0; k < 800; k++) {
+    const day = dayOf(d);
+    if (day > end) break;
+    if (days.has(day)) { out.n++; run++; miss = 0; if (run % 7 === 0 && out.shields < 2) out.shields++; }
+    else if (day !== end) {
+      miss++; run = 0;
+      if (miss === 1 && out.n > 0 && out.shields > 0) { out.shields--; out.used.push(day); }
+      else {
+        /* a second missed day in a row: the lifeline of the day before did not save the streak, so it comes back */
+        if (miss === 2 && out.used.length && out.used[out.used.length - 1] === dayOf(new Date(d.getTime() - 86400000))) { out.used.pop(); out.shields++; }
+        out.n = 0;
+      }
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+function streakOf(list, extra) { return streakInfo(list, extra).n; }
+/* a lifeline used for yesterday is told once, on the learning screen */
+function shieldNotice() {
+  const y = (() => { const d = now(); d.setDate(d.getDate() - 1); return dayOf(d); })(), seen = S.settings.shieldSeen || {}, msgs = [];
+  [['xw', 'בתשחץ היומי', streakInfo(S.settings.xwDays, S.settings.xwDaily && S.settings.xwDaily.day)], ['wd', 'בוורדל', streakInfo(S.settings.wdDays)]].forEach(([k, name, inf]) => {
+    if (inf.used.indexOf(y) >= 0 && seen[k] !== y) { seen[k] = y; msgs.push('🛡️ חבל הצלה שמר על הרצף ' + name + ' (🔥 ' + inf.n + '). נשארו ' + inf.shields + '/2'); }
+  });
+  if (msgs.length) { S.settings.shieldSeen = seen; save(); toast(msgs.join('. ')); }
 }
 document.addEventListener('keydown', ev => {
   if (!(R.tab === 'games' && R.sub === 'wordle' && wd) || sheetOpen || ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -2149,7 +2248,10 @@ function feedbackUrl() {
   const text = 'שלום, יש לי הערה על האפליקציה ארמית: מסכת שבת (גרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '):\n';
   return 'https://wa.me/' + FEEDBACK_PHONE.replace(/\D/g, '') + '?text=' + encodeURIComponent(text);
 }
-function localDay() { const d = new Date(); return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
+/* the beta lab (APK only) can move the date by whole days, to try editions and lifelines; elsewhere the shift is always 0 */
+function dayShift() { if (!BETA) return 0; try { return parseInt(localStorage.getItem('aramit-beta-shift') || '0', 10) || 0; } catch (e) { return 0; } }
+function now() { return new Date(Date.now() + dayShift() * 86400000); }
+function localDay() { const d = now(); return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
 function backupText() {
   return JSON.stringify({ app: 'aramit-shabbat', version: VERSION, saved: localDay(),
     data: { prog: S.prog, edits: S.edits, best: S.best, fav: S.fav, miss: S.miss, settings: S.settings } });
@@ -2264,6 +2366,7 @@ function openSettings(confirmReset) {
     '<input type="file" id="s-file" accept=".json,application/json,text/plain" hidden>' +
     '<p class="small muted">קובץ הגיבוי כולל את ההתקדמות, המועדפים, רשימת הטעויות, השיאים, ההגדרות והפירושים שערכת.</p>' +
     '<button class="link start" id="s-text">גיבוי ושחזור כטקסט</button></div>' +
+    betaLabHtml() +
     '<button class="btn line wide" id="s-help">איך לומדים באפליקציה</button>' +
     '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '"' + (NATIVE ? '' : ' target="_blank" rel="noopener"') + '>דווח על טעות / הצע שיפור</a>' +
     (confirmReset
@@ -2298,10 +2401,30 @@ function openSettings(confirmReset) {
   };
   $('s-text').onclick = () => openBackupText('');
   $('s-help').onclick = () => openOnboarding(0);
+  bindBetaLab();
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('s-reset', () => openSettings(true));
   on('s-reset-no', () => openSettings());
   on('s-reset-yes', () => { S.prog = {}; S.edits = {}; S.best = {}; S.fav = {}; S.miss = {}; save(); closeSheet(); toast('ההתקדמות אופסה'); session = null; quiz = null; game = null; nav('learn', null, true); });
+}
+/* 🛠️ the beta lab, in the APK only: move the date to any edition, or a day on, to try the daily boards, the archive and the lifelines */
+function setShift(n) { try { if (n) localStorage.setItem('aramit-beta-shift', String(n)); else localStorage.removeItem('aramit-beta-shift'); } catch (e) { /* ignore */ } }
+function betaLabHtml() {
+  if (!BETA || !window.DAILY) return '';
+  const day = localDay(), xi = xwStreakInfo(), wi = streakInfo(S.settings.wdDays), sh = dayShift();
+  return '<div class="field lab"><span class="label">🛠️ מעבדת בטא</span>' +
+    '<p class="small muted">התאריך המדומה: ' + day.split('-').reverse().join('.') + ', מהדורה #' + xwEdition(day) + (sh ? ' (הזזה של ' + sh + ' ימים)' : ' (התאריך האמיתי)') + '.</p>' +
+    '<p class="small">תשחץ: 🔥 ' + xi.n + ' 🛡️ ' + xi.shields + '/2. וורדל: 🔥 ' + wi.n + ' 🛡️ ' + wi.shields + '/2.</p>' +
+    '<label for="lab-ed">מעבר למהדורה (1 עד 120)</label><div class="two"><input type="number" id="lab-ed" min="1" max="120" value="' + Math.min(120, Math.max(1, xwEdition(day))) + '"><button class="btn line" id="lab-go">מעבר</button></div>' +
+    '<div class="two"><button class="btn line" id="lab-day">סימולציית יום (+1)</button><button class="btn line" id="lab-reset">חזרה להיום</button></div>' +
+    '<p class="small muted">ההזזה משנה רק את התאריך שהאפליקציה רואה. הרצף וחבלי ההצלה מחושבים מחדש לפי ימי הפתרון.</p></div>';
+}
+function bindBetaLab() {
+  if (!BETA || !$('lab-go')) return;
+  const apply = n => { setShift(n); wd = null; if (xwStale()) xg = null; Object.keys(drawn).forEach(k => delete drawn[k]); openSettings(); render(false); toast('התאריך המדומה: ' + localDay().split('-').reverse().join('.') + ', מהדורה #' + xwEdition(localDay())); };
+  $('lab-go').onclick = () => { const n = Math.min(120, Math.max(1, parseInt($('lab-ed').value, 10) || 1)); apply(dayShift() + n - xwEdition(localDay())); };
+  $('lab-day').onclick = () => apply(dayShift() + 1);
+  $('lab-reset').onclick = () => apply(0);
 }
 function openOnboarding(step) {
   const dots = '<div class="steps">' + [0, 1, 2].map(i => '<i class="' + (i <= step ? 'on' : '') + '"></i>').join('') + '</div>';
@@ -2329,6 +2452,7 @@ function openOnboarding(step) {
 
 /* ---------- boot ---------- */
 load(); applyLook(); restoreSc(); restoreTq(); restoreXw();
+if (BETA) { const h = document.querySelector('header h1'); if (h) { const sm = h.querySelector('small'); (sm || h).insertAdjacentHTML(sm ? 'beforebegin' : 'beforeend', '<span class="beta">BETA</span>'); } }
 document.querySelectorAll('#tabs button').forEach(b => { b.onclick = () => turnTo(b.dataset.tab); });
 $('btn-settings').onclick = () => openSettings();
 $('btn-theme').onclick = () => {
@@ -2341,7 +2465,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) openOnboarding(0);
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session };
 
 /* hardware back button inside the Android app */
 try {

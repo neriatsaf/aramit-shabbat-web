@@ -153,7 +153,7 @@ textarea{min-height:84px;resize:vertical}
 .review b{font-family:var(--f-word);font-size:1.1rem}
 
 .sheet{position:fixed;inset:0;background:rgba(8,12,22,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
-.sheet>div{background:var(--bg);width:100%;max-width:600px;max-height:92%;overflow:auto;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+.sheet>div{background:var(--bg);width:100%;max-width:600px;max-height:92%;overflow:auto;border-radius:20px 20px 0 0;padding:20px 16px calc(48px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
 .sheet.full{align-items:stretch}
 .sheet.full>div{max-height:none;border-radius:0;padding-top:calc(28px + env(safe-area-inset-top,0px));justify-content:center}
 .steps{display:flex;gap:6px;justify-content:center}
@@ -327,3 +327,41 @@ body.xwmode .top{display:none}
 .xw > .row{width:100%;flex-wrap:nowrap;gap:8px}
 .xw > .row > span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .xw > .row > span:last-child{flex:none;white-space:nowrap}
+/* the result of the selected word, beside its letters in the live bar */
+.xbar .xmark{flex:none;font-size:1.25rem;line-height:1;font-weight:700}
+.xbar .xmark.ok{color:var(--good)}
+.xbar .xmark.no{color:var(--bad)}
+/* the dictionary: the search with one small button beside it; filters and order open underneath */
+.dsearch{display:flex;gap:8px;align-items:stretch}
+.dsearch input{flex:1;min-width:0}
+.morebtn{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:0 12px;font-weight:600;font-size:.86rem;white-space:nowrap;min-height:44px}
+.morebtn[aria-expanded="true"]{border-color:var(--brand);color:var(--brand)}
+.dopts{display:flex;flex-direction:column;gap:10px}
+/* the quiz: level and number of questions side by side */
+.qrow{display:flex;gap:10px}
+.qrow .field:first-child{flex:3}
+.qrow .field:last-child{flex:2}
+.pkpick .morebtn{min-height:36px;border-radius:999px;padding:0 12px}
+/* 1.5.0: holding range, lifelines, archive, beta */
+.hold { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
+.hold .holdl { flex: 1; text-align: start; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; color: var(--ink); font: inherit; font-weight: 600; }
+.hold .btn { flex: none; padding: 8px 14px; }
+.hf em { font-style: normal; opacity: .8; margin-inline-start: 4px; }
+.hubx { display: flex; gap: 14px; justify-content: flex-start; margin-top: 8px; }
+.hlink { background: none; border: 0; padding: 4px 0; color: var(--brand); font: inherit; font-size: .9rem; cursor: pointer; }
+.alist { display: flex; flex-direction: column; gap: 8px; }
+.arow { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); padding: 6px 0; }
+.arow .btn { padding: 6px 10px; font-size: .85rem; }
+h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; background: var(--bad); color: var(--surface); border-radius: 6px; padding: 2px 6px; margin-inline-start: 8px; vertical-align: middle; }
+.lab { border: 1px dashed var(--line); border-radius: 12px; padding: 10px; }
+/* 1.5.0: a definition cell whose words are solved is greyed, with a small ✓ in its corner */
+.cell-clue.solved{background:var(--soft);color:var(--muted)}
+.cell-clue .xq.done em{opacity:.55}
+.cell-clue .xq.done .xa{opacity:.45}
+/* the pin: an open lock in a quiet colour while off, a closed lock, bold and filled, while on */
+.xtools{gap:8px}
+.xtools button.pin{flex:0 0 48px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.xtools button.pin svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.xtools button.pin.on{color:var(--brand-ink)}
+.xtools button.pin.on svg{stroke-width:2.6}
+.xtools button.pin.on svg rect{fill:currentColor;fill-opacity:.25}

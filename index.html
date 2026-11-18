@@ -26,8 +26,8 @@ if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content',
     <span class="topbtns"><button class="iconbtn" id="btn-theme" aria-label="מעבר למצב כהה">🌙</button><button class="iconbtn" id="btn-settings" aria-label="הגדרות">הגדרות</button></span>
   </header>
   <main id="rail-wrap" dir="ltr"><div id="rail" dir="ltr">
-    <section class="panel" id="p-games" dir="rtl" aria-label="משחקים"></section>
     <section class="panel" id="p-xw" dir="rtl" aria-label="תשחץ"></section>
+    <section class="panel" id="p-games" dir="rtl" aria-label="משחקים"></section>
     <section class="panel" id="p-quiz" dir="rtl" aria-label="חידון"></section>
     <section class="panel" id="p-dict" dir="rtl" aria-label="מילון"></section>
     <section class="panel" id="p-learn" dir="rtl" aria-label="לימוד"></section>
@@ -37,7 +37,6 @@ if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content',
   <button role="tab" data-tab="learn"><svg viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5"/></svg>לימוד<i></i></button>
   <button role="tab" data-tab="dict"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>מילון<i></i></button>
   <button role="tab" data-tab="quiz"><svg viewBox="0 0 24 24"><path d="M9 11.5l2.2 2.2L15.5 9"/><rect x="3.5" y="3.5" width="17" height="17" rx="3"/></svg>חידון<i></i></button>
-  <button role="tab" data-tab="xw"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9.2h17M3.5 14.8h17M9.2 3.5v17M14.8 3.5v17"/></svg>תשחץ<i></i></button>
   <button role="tab" data-tab="games"><svg viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>משחקים<i></i></button>
 </div></nav>
 <div id="sheet-host"></div>
@@ -47,6 +46,7 @@ if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content',
 <script src="concepts.js"></script>
 <script src="content.js"></script>
 <script src="bank.js"></script>
+<script src="xwclues.js"></script>
 <script src="daily-boards.js"></script>
 <script src="app.js"></script>
 </body>
