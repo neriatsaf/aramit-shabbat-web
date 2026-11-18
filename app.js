@@ -12,8 +12,11 @@ function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 const VERSION = '1.5.3';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
-/* the WhatsApp number that receives reports and suggestions: country code and number in digits only, for example 972501234567.
-   Left empty, WhatsApp opens with the message ready and asks whom to send it to */
+/* ===== where "דיווח על טעות" goes: FILL IN ONE OF THESE BEFORE THE LAUNCH =====
+   FEEDBACK_PHONE: the WhatsApp number that receives the reports, country code and digits only, for example '972501234567'.
+   The message opens ready, addressed to that number.
+   Left empty, WhatsApp opens with the message ready and asks whom to send it to (a person or a group, such as the yeshiva's group).
+   A group's invite link (chat.whatsapp.com/...) cannot carry a ready message, so for a group leave this empty */
 const FEEDBACK_PHONE = '';
 /* running inside the Android app, or in a browser; and in a browser, whether it was opened from the home screen */
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
@@ -129,9 +132,34 @@ function srcHtml(e) { return e.cn ? '' : '<span class="src">' + esc(countLine(e)
 function afterHtml(e) { return e.cn ? '<div class="answer">' + esc(e.w) + ': ' + esc(e.s) + '</div>' + explainHtml(e) : '<div class="answer">' + esc(e.w) + ': ' + esc(gloss(e)) + '</div>' + srcHtml(e); }
 function short(e) {
   if (e.cn) return e.s;
-  let g = gloss(e).replace(/\s*\([^)]*\)/g, '').trim();
+  let g = noParens(gloss(e));
   if (g.length > 44) { const k = g.indexOf(';'); if (k > 6) g = g.slice(0, k); }
   return g || gloss(e);
+}
+/* one place that decides which wording of a meaning each part of the app shows, from the one store of data:
+   dictionary, study : the full meaning of data.js, with its brackets and every sense
+   crossword         : the definition rewritten for the crossword (xwclues.js) when there is one, else the short meaning
+   speed, pairs      : a card: no brackets, the first sense only (before ";"), and when that is still longer than 22 characters,
+                       the crossword definition without its closing words (", בלשון הגמרא", ", בארמית"...) if it is shorter.
+                       A card never passes 25 characters: what is left is cut at a comma, or at the last whole word
+   quiz              : the meaning without brackets, so the right answer is not longer than the wrong ones by its notes.
+   A bracket that marks an abbreviation, (ר"ת), always stays */
+const KEEP_PAREN = /\(ר["״]ת\)/;
+function noParens(t) { return String(t).replace(/\s*\([^)]*\)/g, m => KEEP_PAREN.test(m) ? m : '').replace(/\s{2,}/g, ' ').trim(); }
+const XW_TAILS = /,\s*(בלשון הגמרא|בלשון המשנה|בלשון חכמים|בארמית|בגמרא|במשנה|בלשון התלמוד)\s*$/;
+const CARD_MAX = 25;
+function getGlossForMode(e, mode) {
+  const full = e.cn || e.xe ? e.s : gloss(e);
+  if (mode === 'dictionary' || mode === 'study') return full;
+  if (mode === 'crossword') return (typeof xwOv === 'function' && xwOv(e)) || (e.cn || e.xe ? e.s : short(e));
+  if (mode === 'quiz') return noParens(full) || full;
+  /* speed, pairs */
+  let t = noParens(full) || full;
+  const k = t.indexOf(';'); if (k > 0) t = t.slice(0, k).trim();
+  if (t.length > 22) { const o = typeof xwOv === 'function' && xwOv(e); if (o) { const c = noParens(o).replace(XW_TAILS, '').trim(); if (c && c.length < t.length) t = c; } }
+  if (t.length > CARD_MAX) { const m = t.search(/[,:]/); if (m >= 4 && m <= CARD_MAX) t = t.slice(0, m).trim(); }
+  if (t.length > CARD_MAX) { const cut = t.slice(0, CARD_MAX - 1), sp = cut.lastIndexOf(' '); t = (sp >= 8 ? cut.slice(0, sp) : cut).trim() + '…'; }
+  return t;
 }
 function hebNum(n) {
   const u = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'], t = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'], h = ['', 'ק', 'ר', 'ש', 'ת'];
@@ -280,13 +308,13 @@ function optionsHtml(q, shown, picked) {
   return '<div class="opts">' + q.opts.map((o, i) => {
     let cls = 'opt' + (q.rev ? ' aram' : '') + (q.e.cn && !q.rev ? ' long' : '');
     if (shown) { if (o === q.e) cls += ' right'; else if (picked === i) cls += ' wrong'; }
-    return '<button class="' + cls + '" data-i="' + i + '"' + (shown ? ' disabled' : '') + '>' + esc(q.rev ? o.w : short(o)) + '</button>';
+    return '<button class="' + cls + '" data-i="' + i + '"' + (shown ? ' disabled' : '') + '>' + esc(q.rev ? o.w : getGlossForMode(o, q.gmode || 'quiz')) + '</button>';
   }).join('') + '</div>';
 }
 function promptHtml(q) {
   if (q.e.cn) return q.rev ? '<span class="tag">איזה מושג מתאים להגדרה?</span><div class="word sm">' + esc(q.e.s) + '</div>'
                            : '<span class="tag">' + esc(TOPICS[q.e.t]) + '</span><div class="word' + (q.e.w.length > 14 ? ' md' : '') + '">' + esc(q.e.w) + '</div>';
-  return q.rev ? '<span class="tag">איזו מילה מתאימה לפירוש?</span><div class="word sm">' + esc(short(q.e)) + '</div>'
+  return q.rev ? '<span class="tag">איזו מילה מתאימה לפירוש?</span><div class="word sm">' + esc(getGlossForMode(q.e, 'quiz')) + '</div>'
                : '<span class="tag">מה הפירוש?</span><div class="word' + (q.e.w.length > 14 ? ' md' : '') + '">' + esc(q.e.w) + '</div>';
 }
 function pool(scope, list) { list = list || D; return scope === 'learned' ? list.filter(e => S.prog[pid(e)]) : list; }
@@ -1319,12 +1347,12 @@ function renderTQ() {
 let game = null;
 const gameCfg = { scope: 'all', kind: 'words' };
 function renderGames() {
-  const bm = S.best.match, bb = S.best.blitz, bf = S.best.fill;
+  const bm = S.best.match, bb = S.best.blitz30, bf = S.best.fill;
   gameCfg.scope = 'all'; gameCfg.kind = 'words';
   view.innerHTML = '<h2>משחקים</h2><div class="menu">' +
     '<button id="g-xw"><b>תשחץ אישי</b><span>לוח חדש מהמילים שתבחר: כל המאגר, מה שלמדת או לפי פרקים, וברמת הקושי שתבחר</span></button>' +
     '<button id="g-match"><b>התאמת זוגות</b><span>לחבר שש מילים בארמית לפירוש שלהן, כמה שיותר מהר</span>' + (bm ? '<em>שיא: ' + bm + ' שנ\'</em>' : '') + '</button>' +
-    '<button id="g-blitz"><b>אתגר 60 שניות</b><span>לזהות כמה שיותר מילים לפני שהזמן נגמר, עם ניקוד ורצף</span>' + (bb ? '<em>שיא: ' + bb + '</em>' : '') + '</button>' +
+    '<button id="g-blitz"><b>אתגר 30 שניות</b><span>לזהות כמה שיותר מילים לפני שהזמן נגמר, עם ניקוד ורצף</span>' + (bb ? '<em>שיא: ' + bb + '</em>' : '') + '</button>' +
     '<button id="g-fill"><b>השלמת ביטויים</b><span>ביטוי של שקלא וטריא עם מילה חסרה. איזו מילה משלימה אותו?</span>' + (bf ? '<em>שיא: ' + bf + '/10</em>' : '') + '</button></div>';
   $('g-xw').onclick = () => nav('xw', 'setup');
   $('g-match').onclick = () => startMatch();
@@ -1358,7 +1386,7 @@ function renderMatch() {
   for (let i = 0; i < 6; i++) {
     const l = g.left[i], r = g.right[i];
     h += '<button class="tile aram' + (g.done.has(l.w) ? ' done' : '') + (g.selL === i ? ' sel' : '') + (g.miss && g.miss[0] === i ? ' miss' : '') + '" data-s="L" data-i="' + i + '"' + (g.done.has(l.w) ? ' disabled' : '') + '>' + esc(l.w) + '</button>' +
-         '<button class="tile' + (g.cn ? ' long' : '') + (g.done.has(r.w) ? ' done' : '') + (g.selR === i ? ' sel' : '') + (g.miss && g.miss[1] === i ? ' miss' : '') + '" data-s="R" data-i="' + i + '"' + (g.done.has(r.w) ? ' disabled' : '') + '>' + esc(short(r)) + '</button>';
+         '<button class="tile' + (g.cn ? ' long' : '') + (g.done.has(r.w) ? ' done' : '') + (g.selR === i ? ' sel' : '') + (g.miss && g.miss[1] === i ? ' miss' : '') + '" data-s="R" data-i="' + i + '"' + (g.done.has(r.w) ? ' disabled' : '') + '>' + esc(getGlossForMode(r, 'pairs')) + '</button>';
   }
   view.innerHTML = h + '</div><p class="small muted">' + (g.cn ? 'בוחרים מושג מהטור הימני ואת ההגדרה שלו מהטור השמאלי.' : 'בוחרים מילה מהטור הימני ואת הפירוש שלה מהטור השמאלי.') + '</p><button class="link" id="quit">סיום</button>';
   $('quit').onclick = goBack;
@@ -1366,7 +1394,7 @@ function renderMatch() {
     const i = +b.dataset.i; g.miss = null;
     if (b.dataset.s === 'L') g.selL = g.selL === i ? null : i; else g.selR = g.selR === i ? null : i;
     if (g.selL !== null && g.selR !== null) {
-      if (g.left[g.selL] === g.right[g.selR]) g.done.add(g.left[g.selL].w); else { g.misses++; g.miss = [g.selL, g.selR]; noteMistake(g.left[g.selL], short(g.right[g.selR])); }
+      if (g.left[g.selL] === g.right[g.selR]) g.done.add(g.left[g.selL].w); else { g.misses++; g.miss = [g.selL, g.selR]; noteMistake(g.left[g.selL], getGlossForMode(g.right[g.selR], 'pairs')); }
       g.selL = null; g.selR = null;
     }
     if (g.done.size === 6) {
@@ -1378,22 +1406,23 @@ function renderMatch() {
     renderMatch();
   }; });
 }
-/* blitz */
+/* blitz: 30 seconds since 1.5.3. Its best is kept under its own key (blitz30), so a best of the old minute does not stand in the way */
+const BLITZ_SECS = 30;
 function startBlitz() {
   const src = gamePool(8); if (!src) return;
-  game = { type: 'blitz', src, left: 60, score: 0, streak: 0, top: 0, right: 0, total: 0, q: null, flash: null, lock: false };
+  game = { type: 'blitz', src, left: BLITZ_SECS, score: 0, streak: 0, top: 0, right: 0, total: 0, q: null, flash: null, lock: false };
   nextBlitz();
   nav('games', 'blitz', R.sub === 'over');
   timers.push(setInterval(() => {
     game.left--; const el = $('b-time'); if (el) el.textContent = Math.max(0, game.left);
     if (game.left <= 0) {
-      stopTimers(); const best = !S.best.blitz || game.score > S.best.blitz; if (best && game.score) { S.best.blitz = game.score; save(); }
+      stopTimers(); const best = !S.best.blitz30 || game.score > S.best.blitz30; if (best && game.score) { S.best.blitz30 = game.score; save(); }
       game.over = { big: game.score, line: 'נקודות. ' + game.right + ' נכונות מתוך ' + game.total + ', הרצף הארוך ביותר: ' + game.top, best: best && game.score > 0, again: startBlitz };
       nav('games', 'over', true);
     }
   }, 1000));
 }
-function nextBlitz() { const g = game; let e; do { e = g.src[Math.floor(Math.random() * g.src.length)]; } while (g.q && g.src.length > 1 && e === g.q.e); g.q = makeQuestion(e, 'mid'); g.q.rev = false; g.q.opts = shuffle([e].concat(distractors(e, 'mid', false))); g.flash = null; g.lock = false; }
+function nextBlitz() { const g = game; let e; do { e = g.src[Math.floor(Math.random() * g.src.length)]; } while (g.q && g.src.length > 1 && e === g.q.e); g.q = makeQuestion(e, 'mid'); g.q.rev = false; g.q.gmode = 'speed'; g.q.opts = shuffle([e].concat(distractors(e, 'mid', false))); g.flash = null; g.lock = false; }
 function renderBlitz() {
   const g = game, q = g.q;
   view.innerHTML = '<div class="hud"><div><b id="b-time">' + Math.max(0, g.left) + '</b><span>שניות</span></div><div><b>' + g.score + '</b><span>נקודות</span></div><div><b>' + g.streak + '</b><span>רצף</span></div></div>' +
@@ -1402,7 +1431,7 @@ function renderBlitz() {
   view.querySelectorAll('.opt').forEach(b => { b.onclick = () => {
     if (g.lock) return; g.lock = true; const i = +b.dataset.i; const ok = q.opts[i] === q.e; g.total++;
     if (ok) { g.right++; g.streak++; g.top = Math.max(g.top, g.streak); g.score += 10 + Math.min(10, (g.streak - 1) * 2); }
-    else { g.streak = 0; noteMistake(q.e, short(q.opts[i])); }
+    else { g.streak = 0; noteMistake(q.e, getGlossForMode(q.opts[i], 'speed')); }
     noteAnswer(q.e, ok); save();
     g.flash = { i }; renderBlitz();
     setTimeout(() => { if (game !== g || R.sub !== 'blitz') return; nextBlitz(); renderBlitz(); }, ok ? 220 : 900);
@@ -1484,19 +1513,28 @@ function xwSplit(e) { const p = e.w.trim().split(/\s+/); return p.length > 1 ? '
    the dictionary keeps the original */
 const XWC = window.XW_CLUES || {};
 function xwOv(e) { return XWC[xwSrc(e) + ':' + e.w]; }
-function xwClue(e) { return (xwOv(e) || (e.cn || e.xe ? e.s : short(e))) + xwSplit(e); }
+function xwClue(e) { return getGlossForMode(e, 'crossword') + xwSplit(e); }
 function xwDef(e) { return (xwOv(e) || (e.cn || e.xe ? e.s : gloss(e))) + xwSplit(e); }
 /* a board from its word list: [source, index, arrow, clue cell] on R rows and C columns */
 function xwFromRefs(R, C, refs) {
   const L = new Array(R * C).fill(''), K = new Array(R * C).fill(null), words = [];
-  for (const [src, i, t, clue] of refs) {
-    const e = xwEntry(src, i); if (!e || !XNAME[t]) return null;
+  for (const [src, i, t, clue, wtext] of refs) {
+    /* a saved board names each word by its place in the store; when the store has changed since (a term taken out of the bank),
+       the place may now hold another word, and the board is not rebuilt from it */
+    const e = xwEntry(src, i); if (!e || !XNAME[t] || (wtext && wtext !== e.w)) return null;
     const ans = xwAns(e), p = xwCells(t, Math.floor(clue / C), clue % C, ans.length);
     if (p.cells.some(q => q[0] < 0 || q[1] < 0 || q[0] >= R || q[1] >= C)) return null;
     const cells = p.cells.map(q => q[0] * C + q[1]);
     for (let j = 0; j < cells.length; j++) { if (L[cells[j]] && L[cells[j]] !== ans[j]) return null; L[cells[j]] = ans[j]; }
     K[clue] = (K[clue] || []).concat([{ t, wi: words.length }]);
     words.push({ e, t, clue, cells, h: p.h, ans });
+  }
+  /* a board that could not be played is not shown: a word under two letters, a letter on a definition cell, or a word whose
+     row runs on into other letters, so the cells after its definition do not match its answer */
+  for (const w of words) {
+    if (w.cells.length < 2 || w.cells.some(k => K[k]) || L[w.clue]) return null;
+    const dr = w.h ? 0 : 1, dc = w.h ? 1 : 0, last = w.cells[w.cells.length - 1], r = Math.floor(last / C) + dr, c = last % C + dc;
+    if (r < R && c < C && L[r * C + c] && !K[r * C + c]) return null;
   }
   return { R, C, L, K, words };
 }
@@ -1552,9 +1590,44 @@ function xwVague(ans, clue) {
   const content = toks.filter(t => !XSMALL.has(t));
   return !content.length || (norm(xwLetters(ans)).length <= 3 && content.length < 2);
 }
+/* the root of the answer in its definition: the same test as tools/make-daily.js (rootLeak), so a personal board leaves out
+   exactly the entries the daily pool leaves out: a dictionary meaning that gives the Hebrew form of the same word (אדליק: הדליק),
+   unless xwclues.js has a definition of its own for it */
+const LFIN = { 'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ' };
+const lwords = s => String(s).replace(/[֑-ׇ]/g, '').replace(/[^א-ת ]/g, ' ').replace(/[ךםןףץ]/g, c => LFIN[c]).split(/\s+/).filter(Boolean);
+const LSKIP = /^(בלשונ|הגמרא|בגמרא|המשנה|במשנה|בארמית|ארמית|לשונ|מילת|שאלה)$/;
+const LSTOP2 = new Set('של על אל את עם מן כל זה זו זאת לא כי אם גם מה מי הוא היא הם הן לו לה בו בה מסכת אמורא תנא ספר רבי רב בן בר'.split(' '));
+const LENDS = ['יהו', 'יהמ', 'יה', 'יו', 'הו', 'נו', 'ות', 'ימ', 'ינ', 'תי', 'ה', 'ת', 'ו', 'א'];
+function lcores(w) {
+  const out = new Set(), starts = [w]; let x = w;
+  for (let i = 0; i < 3 && /^[הובלכמשדנתאי]/.test(x) && x.length > 3; i++) { x = x.slice(1); starts.push(x); }
+  for (const s of starts) { const ends = [s]; for (const e of LENDS) if (s.endsWith(e) && s.length - e.length >= 2) ends.push(s.slice(0, -e.length));
+    for (const t of ends) { const k = t.replace(/[ויא]/g, ''); if (k.length >= 2) out.add(k.length >= 3 ? k.slice(0, 3) : k); } }
+  return out;
+}
+function lroot2(w) { const o = new Set(); for (const s of [w, /^[הובלכמשדנתאי]/.test(w) && w.length > 3 ? w.slice(1) : null]) { if (!s) continue;
+  const ends = [s]; for (const e of LENDS) if (s.endsWith(e) && s.length - e.length >= 2) ends.push(s.slice(0, -e.length));
+  for (const t of ends) { const k = t.replace(/[ויא]/g, ''); if (k.length === 2) o.add(k); } } return o; }
+const lskel = w => w.replace(/[ויא]/g, '').replace(/ה$/, '');
+const lstrips = t => { const o = new Set([t]); let x = t; for (let i = 0; i < 2 && /^[הובלכמשד]/.test(x) && x.length > 3; i++) { x = x.slice(1); o.add(x); } return o; };
+const lcommon = (a, b) => { for (let i = 0; i + 3 <= a.length; i++) if (b.includes(a.slice(i, i + 3))) return true; return false; };
+function rootLeak(ans, clue) {
+  const aw = lwords(ans), multi = aw.length > 1, tw = lwords(clue).filter(t => !LSKIP.test(t));
+  for (const a0 of aw) {
+    if (!(multi && a0.length <= 2)) { const A = lcores(a0), A2 = lroot2(a0);
+      for (const t0 of tw) { if (t0.length < 2) continue;
+        for (const t of lcores(t0)) if (A.has(t) && (t.length === 3 || (t0.length <= 5 && !LSTOP2.has(t0) && A2.has(t)))) return t0; } }
+    const S = [...lstrips(a0)].map(lskel);
+    for (const t0 of tw) for (const t of [...lstrips(t0)].map(lskel)) for (const a of S) {
+      if (a.length >= 3 && lcommon(a, t)) return t0;
+      if (a.length === 2 && !(multi && a0.length <= 2) && !LSTOP2.has(t0) && t.length >= 2 && t.length <= 4 && t.includes(a)) return t0;
+    }
+  }
+  return '';
+}
 /* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
    The level ranks the chosen store by frequency, and every word of the expanded store counts as hard */
-const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t); };
+const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
 const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && !(e.ext && /בעל כמה פירושים/.test(e.m0)) && xwOk(e, e.cn ? e.s : short(e), 34));
 BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && xwOk(e, e.s, 40)) XW_ALL.push(e); });
 const XW_CORE = XW_ALL.filter(e => !e.ext && !e.bk);
@@ -1697,7 +1770,7 @@ function xwBuild(src, done, day) {
 const XKEY = 'aramit-shabbat-xw';
 function xwSave() {
   const g = xg; if (!g || g.type !== 'xw' || g.arch) return;
-  const o = { v: 2, R: g.b.R, C: g.b.C, day: g.day || '', ed: g.b.ed || 0, theme: g.b.theme || '', anchor: !!g.b.anchor, words: g.b.words.map(w => [xwSrc(w.e), w.e.i, w.t, w.clue]), typed: g.typed, hint: [...g.hint], bad: [...g.bad],
+  const o = { v: 2, R: g.b.R, C: g.b.C, day: g.day || '', ed: g.b.ed || 0, theme: g.b.theme || '', anchor: !!g.b.anchor, words: g.b.words.map(w => [xwSrc(w.e), w.e.i, w.t, w.clue, w.e.w]), typed: g.typed, hint: [...g.hint], bad: [...g.bad],
     wrongW: [...g.wrongW], hintW: [...g.hintW], act: g.act, cur: g.cur, secs: g.secs || 0, checks: g.checks || 0, open: !!g.open, done: !!g.done };
   try { localStorage.setItem(XKEY, JSON.stringify(o)); } catch (e) { /* storage full or blocked */ }
 }
@@ -1859,8 +1932,10 @@ function xwBoardHtml() {
    The sizes and the forms chosen are kept for the board */
 function xwShorter(t) {
   const m = /\s\((\d+(?:, \d+)*)\)$/.exec(t), tail = m ? m[0] : '', body = m ? t.slice(0, -tail.length) : t, out = [t];
-  const a = body.replace(/\s*\([^)]*\)/g, '').trim(); if (a && a !== body) out.push(a + tail);
+  const a = noParens(body); if (a && a !== body) out.push(a + tail);
   const k = a.search(/[,;:]/); if (k >= 6) out.push(a.slice(0, k).trim() + tail);
+  /* the mark (ר"ת) goes only when nothing else fits a narrow cell */
+  const bare = a.replace(/\s*\(ר["״]ת\)/g, '').trim(); if (bare && bare !== a) out.push(bare + tail);
   return out;
 }
 function xwFitClues() {
@@ -1980,7 +2055,13 @@ function xwRefit() { if (R.tab === 'xw' && R.sub === 'board' && xg && xg.type ==
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(xwRefit);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', xwRefit);
 /* the tab bar can grow after the board is laid out (the system bar of the phone, a font that arrives late) */
-if (window.ResizeObserver) { const tb = document.getElementById('tabs'); if (tb) new ResizeObserver(() => xwRefit()).observe(tb, { box: 'border-box' }); }
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(() => xwRefit());
+  const tb = document.getElementById('tabs'); if (tb) ro.observe(tb, { box: 'border-box' });
+  /* the page itself changes height after a reload (the address bar settling, the update just applied): the board is laid out again */
+  const px = document.getElementById('p-xw'); if (px) ro.observe(px, { box: 'border-box' });
+}
+window.addEventListener('load', () => { xwRefit(); setTimeout(xwRefit, 800); });
 window.addEventListener('resize', () => { if (R.tab === 'xw' && R.sub === 'board' && xg && xg.type === 'xw') { xwFit(); xwFitClues(); } });
 function xwPaint() {
   const g = xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
@@ -2404,8 +2485,18 @@ function applyLook() {
 function plug(name) {
   try { const c = window.Capacitor; if (!c || !c.isNativePlatform || !c.isNativePlatform()) return null; return (c.Plugins && c.Plugins[name]) || null; } catch (e) { return null; }
 }
+function reportWhere() {
+  const out = [];
+  if (R.tab === 'xw' && xg && xg.b) {
+    const g = xg, daily = g.arch || (g.day && g.b.anchor);
+    out.push(daily ? 'התשחץ היומי #' + g.b.ed + (g.day ? ' (' + g.day.split('-').reverse().join('.') + ')' : '') : 'תשחץ אישי');
+    const w = g.b.words[g.act]; if (w && !g.done) out.push('ההגדרה: "' + w.clue + '"');
+  } else if (R.tab === 'games' && R.sub === 'wordle' && wd) out.push('הוורדל היומי #' + xwEdition(wd.day || localDay()));
+  else out.push('התשחץ היומי #' + xwEdition(localDay()));
+  return out.join(', ');
+}
 function feedbackUrl() {
-  const text = 'שלום, יש לי הערה על האפליקציה ארמית: מסכת שבת (גרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '):\n';
+  const text = 'דיווח על טעות באפליקציה ארמית: מסכת שבת\n' + reportWhere() + '\nגרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '\n\nהטעות: ';
   return 'https://wa.me/' + FEEDBACK_PHONE.replace(/\D/g, '') + '?text=' + encodeURIComponent(text);
 }
 /* the beta lab (APK only) can move the date by whole days, to try editions and lifelines; elsewhere the shift is always 0 */
@@ -2529,7 +2620,7 @@ function openSettings(confirmReset) {
     '<button class="link start" id="s-text">גיבוי ושחזור כטקסט</button></div>' +
     betaLabHtml() +
     '<button class="btn line wide" id="s-help">איך לומדים באפליקציה</button>' +
-    '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '"' + (NATIVE ? '' : ' target="_blank" rel="noopener"') + '>דווח על טעות / הצע שיפור</a>' +
+    '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '"' + (NATIVE ? '' : ' target="_blank" rel="noopener"') + '>דיווח על טעות</a>' +
     (confirmReset
       ? '<div class="note">האיפוס ימחק את ההתקדמות ב־' + st.seen + ' ערכים, את המועדפים, את רשימת הטעויות, את השיאים ואת הפירושים שערכת. אי אפשר לבטל אותו.</div><div class="two"><button class="btn bad" id="s-reset-yes">למחוק הכול</button><button class="btn ghost" id="s-reset-no">ביטול</button></div>'
       : '<button class="btn line wide" id="s-reset">איפוס כל ההתקדמות</button>') +
@@ -2673,7 +2764,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()) };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
 
 /* hardware back button inside the Android app */
 try {
