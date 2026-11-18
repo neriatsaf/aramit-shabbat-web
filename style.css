@@ -392,3 +392,13 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .xw .xname{color:var(--ink);font-weight:700}
 .xbar .xsolved b{color:var(--xok)}
 .xbar #xw-sum{flex:none;padding:8px 16px;min-height:0}
+/* 🛠️ the beta only: every edition in the archive, the bar of editions above a board or a word, and the solution shown faint */
+.three{display:grid;grid-template-columns:1fr auto auto;gap:8px;width:100%}
+.atag{display:inline-block;font-size:.7rem;padding:1px 6px;border-radius:8px;border:1px solid var(--line);vertical-align:middle}
+.atag.fut{color:var(--gold);border-color:var(--gold)}
+.atag.now{color:var(--good);border-color:var(--good)}
+.arow.fut{opacity:.85}
+.labnav{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:4px 8px;margin:2px 0 4px;border:1px dashed var(--gold);border-radius:10px;font-size:.85rem}
+.labnav input{width:4.2em;padding:2px 4px;font-size:.85rem}
+.labnav .link{font-size:.85rem}
+.cell-letter.peek{color:var(--muted);opacity:.75}

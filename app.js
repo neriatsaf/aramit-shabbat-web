@@ -12,12 +12,9 @@ function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 const VERSION = '1.5.3';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
-/* ===== where "דיווח על טעות" goes: FILL IN ONE OF THESE BEFORE THE LAUNCH =====
-   FEEDBACK_PHONE: the WhatsApp number that receives the reports, country code and digits only, for example '972501234567'.
-   The message opens ready, addressed to that number.
-   Left empty, WhatsApp opens with the message ready and asks whom to send it to (a person or a group, such as the yeshiva's group).
-   A group's invite link (chat.whatsapp.com/...) cannot carry a ready message, so for a group leave this empty */
-const FEEDBACK_PHONE = '';
+/* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
+   subject and the message ready, naming the board in use */
+const FEEDBACK_EMAIL = 'neriatsaf@gmail.com';
 /* running inside the Android app, or in a browser; and in a browser, whether it was opened from the home screen */
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const BETA = NATIVE || (/[?&]test\b/.test(location.search) && /[?&]beta\b/.test(location.search));
@@ -662,7 +659,7 @@ function dailyCardHtml() {
       '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + ' <em>🛡️ ' + xi.shields + '/2</em></span></button>' +
     '<button class="hcard" id="h-wd"><b>וורדל מסכת שבת #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
       '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + ' <em>🛡️ ' + wi.shields + '/2</em></span></button>' +
-    '</div><div class="hubx">' + (ed > 1 ? '<button class="hlink" id="h-arch">ארכיון 📅</button>' : '') + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
+    '</div><div class="hubx">' + (ed > 1 || BETA ? '<button class="hlink" id="h-arch">ארכיון 📅</button>' : '') + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
 }
 /* where the learner holds in the tractate: a page range (מדף עד דף) chosen in "מה מתרגלים" or in the quiz.
    It filters the daily learning, the quiz and the personal crossword; "+ דף" moves the last page on by one */
@@ -1847,21 +1844,50 @@ function startXW() {
 /* the daily board: all words, every level, the same for everyone on the same date */
 /* a daily board left open past midnight: it is closed, so the day that ended keeps its record and today starts clean */
 function xwStale() { return !!(xg && xg.type === 'xw' && xg.day && xg.b.anchor && !xg.done && xg.day !== localDay()); }
-/* the archive: every edition from #1 to yesterday, to solve again; a board or word solved here does not touch the streak or lifelines */
+/* the archive: every edition from #1 to yesterday, to solve again; a board or word solved here does not touch the streak or lifelines.
+   In the beta (the APK, or ?test&beta) it holds every edition of the file, #1 to the last, the coming ones marked with their day */
+/* the beta counts by the launch schedule (#1 on LAUNCH), so each edition shows the day it is meant for, even before the launch */
+function edDay(n) { const d = new Date((BETA ? LAUNCH : xwEpoch(localDay())) + 'T12:00:00'); d.setDate(d.getDate() + n - 1); return dayOf(d); }
+function nowEd() { const day = localDay(); return BETA && day < LAUNCH ? 0 : xwEdition(day); }
+function archMax() { return BETA && window.DAILY ? window.DAILY.boards.length : xwEdition(localDay()) - 1; }
+function archTag(n) { const ed = nowEd(); return n > ed ? '<span class="atag fut">עתידי</span>' : n === ed ? '<span class="atag now">היום</span>' : ''; }
+/* an edition of the archive; in the beta, today's edition and the coming ones are a look only: nothing of them is recorded */
+function openArchXW(n) { const dd = edDay(n), bd = xwDailyBoard(dd); if (!bd) return; const g = xwGame(bd); g.arch = dd; g.lab = BETA && n >= nowEd(); xwOpen(g); }
+function openArchWD(n) { const g = wdFor(edDay(n), true); if (!g) return; g.lab = BETA && n >= nowEd(); wd = g; if (R.tab === 'games' && R.sub === 'wordle') renderWordle(); else nav('games', 'wordle'); }
 function openArchive() {
-  const day = localDay(), ed = xwEdition(day), arch = S.settings.arch || { xw: {}, wd: {} }, rows = [];
-  for (let n = ed - 1; n >= 1; n--) {
-    const d = new Date(xwEpoch(day) + 'T12:00:00'); d.setDate(d.getDate() + n - 1);
-    const dd = dayOf(d), b = xwDailyBoard(dd);
-    rows.push('<div class="arow"><div><b>#' + n + '</b> <span class="small muted">' + dd.split('-').reverse().join('.') + '</span><br><span class="small">' + esc(b ? b.theme : '') + '</span></div>' +
-      '<button class="btn line" data-axw="' + dd + '">תשחץ' + (arch.xw[n] ? ' ✓' : '') + '</button><button class="btn line" data-awd="' + dd + '">וורדל' + (arch.wd[n] ? ' ✓' : '') + '</button></div>');
-  }
+  const ed = nowEd(), arch = S.settings.arch || { xw: {}, wd: {} }, rows = [], max = archMax();
+  const order = []; if (BETA) for (let n = 1; n <= max; n++) order.push(n); else for (let n = max; n >= 1; n--) order.push(n);
+  order.forEach(n => {
+    const dd = edDay(n), d = window.DAILY.boards[(n - 1) % window.DAILY.boards.length];
+    rows.push('<div class="arow' + (n > ed ? ' fut' : '') + '" data-n="' + n + '"><div><b>#' + n + '</b> ' + archTag(n) + ' <span class="small muted">' + dd.split('-').reverse().join('.') + '</span><br><span class="small">' + esc(d ? d.theme : '') + '</span></div>' +
+      '<button class="btn line" data-axw="' + n + '">תשחץ' + (arch.xw[n] ? ' ✓' : '') + '</button><button class="btn line" data-awd="' + n + '">וורדל' + (arch.wd[n] ? ' ✓' : '') + '</button></div>');
+  });
   openSheet('<div class="row between"><h2>ארכיון 📅</h2><button class="link" id="ar-close">סגירה</button></div>' +
-    '<p class="small muted">מהדורות קודמות, מ-#1 ועד אתמול. פתרון כאן לא משנה את הרצף 🔥 ואת חבלי ההצלה 🛡️.</p>' +
-    (rows.length ? '<div class="alist">' + rows.join('') + '</div>' : '<p>עוד אין מהדורות קודמות. מחר תופיע כאן המהדורה של היום.</p>'));
+    (BETA ? '<p class="small muted">🛠️ בטא: כל ' + max + ' המהדורות, כולל העתידיות. פתיחה של מהדורה של היום או עתידית היא לבדיקה בלבד, ולא נרשמת.</p>'
+      : '<p class="small muted">מהדורות קודמות, מ-#1 ועד אתמול. פתרון כאן לא משנה את הרצף 🔥 ואת חבלי ההצלה 🛡️.</p>') +
+    (rows.length ? '<div class="alist" id="ar-list">' + rows.join('') + '</div>' : '<p>עוד אין מהדורות קודמות. מחר תופיע כאן המהדורה של היום.</p>'));
   $('ar-close').onclick = closeSheet;
-  document.querySelectorAll('#sheet [data-axw]').forEach(b => { b.onclick = () => { closeSheet(); const dd = b.dataset.axw, bd = xwDailyBoard(dd); if (!bd) return; const g = xwGame(bd); g.arch = dd; xwOpen(g); }; });
-  document.querySelectorAll('#sheet [data-awd]').forEach(b => { b.onclick = () => { closeSheet(); const g = wdFor(b.dataset.awd, true); if (g) { wd = g; nav('games', 'wordle'); } }; });
+  if (BETA) { const r = document.querySelector('#ar-list [data-n="' + ed + '"]'); if (r) r.scrollIntoView({ block: 'center' }); }
+  document.querySelectorAll('#sheet [data-axw]').forEach(b => { b.onclick = () => { closeSheet(); openArchXW(+b.dataset.axw); }; });
+  document.querySelectorAll('#sheet [data-awd]').forEach(b => { b.onclick = () => { closeSheet(); openArchWD(+b.dataset.awd); }; });
+}
+/* 🛠️ the beta bar above an archived board or word: the previous and next edition, a jump to any number, and a look at the solution */
+function labNavHtml(g, ed, p) {
+  if (!BETA || !g.arch || !window.DAILY) return '';
+  const max = window.DAILY.boards.length;
+  return '<div class="labnav"><button class="link" id="' + p + '-prev"' + (ed <= 1 ? ' disabled' : '') + '>→ הקודם</button>' +
+    '<span class="small">#' + ed + ' ' + archTag(ed) + ' ' + edDay(ed).split('-').reverse().join('.') + '</span>' +
+    '<button class="link" id="' + p + '-next"' + (ed >= max ? ' disabled' : '') + '>הבא ←</button>' +
+    '<input type="number" id="' + p + '-ed" min="1" max="' + max + '" value="' + ed + '" aria-label="מספר מהדורה"><button class="link" id="' + p + '-go">מעבר</button>' +
+    '<button class="link" id="' + p + '-peek">' + (g.peek ? 'הסתר פתרון' : 'הצג פתרון') + '</button></div>';
+}
+function bindLabNav(g, ed, open, repaint, p) {
+  if (!$(p + '-prev')) return;
+  const max = window.DAILY.boards.length, go = n => open(Math.min(max, Math.max(1, n)));
+  $(p + '-prev').onclick = () => go(ed - 1); $(p + '-next').onclick = () => go(ed + 1);
+  $(p + '-go').onclick = () => go(parseInt($(p + '-ed').value, 10) || ed);
+  $(p + '-ed').onkeydown = e => { if (e.key === 'Enter') $(p + '-go').click(); };
+  $(p + '-peek').onclick = () => { g.peek = !g.peek; repaint(); };
 }
 function startXWDaily() {
   const day = localDay(), saved = xwLoad();
@@ -1913,7 +1939,8 @@ function xwBoardHtml() {
     if (b.L[k]) {
       const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (anchor.has(k) ? ' anchor' : '') + (xwLocked(k) ? ' lock' : '') +
         (g.cw[k].some(i => xwSolved(b.words[i])) ? ' sol' : '');   /* a letter of a solved word: a slightly different shade */
-      h += '<button class="' + cls + '" data-k="' + k + '" aria-label="משבצת">' + esc(norm(g.typed[k])) + '</button>';
+      const pk = g.peek && !g.typed[k];   /* 🛠️ beta: the solution shows faint in the cells not filled */
+      h += '<button class="' + cls + (pk ? ' peek' : '') + '" data-k="' + k + '" aria-label="משבצת">' + esc(pk ? b.L[k] : norm(g.typed[k])) + '</button>';
     } else if (b.K[k]) {
       const ks = b.K[k].slice().sort((x, y) => (XLEFT[y.t] ? 1 : 0) - (XLEFT[x.t] ? 1 : 0)), two = ks.length > 1;
       h += '<button class="cell-clue' + (ks.some(x => x.wi === g.act) ? ' kon' : '') + (two ? ' two' : '') + (ks.every(x => xwSolved(b.words[x.wi])) ? ' solved' : '') + '" data-k="' + k + '">' +
@@ -2002,6 +2029,7 @@ function renderXW() {
   const g = xg;
   view.className = 'panel tight';
   view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day || g.arch ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
+    labNavHtml(g, g.b.ed, 'lx') +
     '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
     '<div class="xlow">' +
@@ -2009,6 +2037,7 @@ function renderXW() {
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
   xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350);
+  bindLabNav(g, g.b.ed, openArchXW, () => { renderXW(); }, 'lx');
   g.open = true; xwSave();
   xwClock();
   /* a solved board offers its summary in the bar, so the button above goes back; a full board not yet right opens the summary */
@@ -2203,7 +2232,7 @@ function xwDone() {
   if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) return;
   g.done = true; xwStopClock();
   g.mistakes = [...new Set([...g.wrongW, ...g.hintW])].map(i => ({ e: b.words[i].e, picked: null }));
-  if (g.arch) { const a = S.settings.arch || { xw: {}, wd: {} }; a.xw[g.b.ed] = g.secs || 1; S.settings.arch = a; save(); }
+  if (g.arch) { if (!g.lab) { const a = S.settings.arch || { xw: {}, wd: {} }; a.xw[g.b.ed] = g.secs || 1; S.settings.arch = a; save(); } }
   else if (g.day) {
     S.settings.xwDaily = { day: g.day, secs: g.secs, hints: g.hint.size, checks: g.checks || 0 };
     const days = (S.settings.xwDays || []).filter(d => d !== g.day).concat([g.day]).sort().slice(-400);
@@ -2351,6 +2380,8 @@ function renderWordle() {
   const keyCls = ch => { const v = st[norm(ch)]; return v ? ' class="k-' + v + '"' : ''; };
   const end = g.done ? wdEndHtml() : '';
   view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : '') + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
+    labNavHtml(g, g.ed, 'lw') +
+    (g.peek ? '<p class="small wclue labpeek">🛠️ ' + esc(g.e.w) + ' (' + esc(g.ans) + '): ' + esc(getGlossForMode(g.e, 'dictionary')) + '</p>' : '') +
     (g.hint ? '<p class="small wclue">💡 ' + esc(wdChapter(g.e)) + '</p>' : '') +
     '<div class="wgrid" id="wd-grid" dir="rtl">' + rows.join('') + '</div>' + end +
     (g.done ? '' : '<div class="xlow"><div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
@@ -2358,6 +2389,7 @@ function renderWordle() {
       row.split('').map(ch => '<button data-ch="' + ch + '"' + keyCls(ch) + '>' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="wd-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div>') + '</div>';
   wdFit();
+  bindLabNav(g, g.ed, openArchWD, renderWordle, 'lw');
   $('quit').onclick = goBack;
   const hb = $('wd-hint'); if (hb) hb.onclick = () => { if (g.done || g.hint) return; g.hint = true; wdSave(); renderWordle(); };
   view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => wdType(b.dataset.ch); });
@@ -2388,7 +2420,7 @@ function wdEnter() {
   g.rows.push(g.cur); g.cur = '';
   if (g.rows[g.rows.length - 1] === g.ans) { g.done = true; g.won = true; }
   else if (g.rows.length >= 6) g.done = true;
-  if (g.done && g.arch) { const a = S.settings.arch || { xw: {}, wd: {} }; if (g.won) a.wd[g.ed] = g.rows.length; S.settings.arch = a; save(); }
+  if (g.done && g.arch) { if (!g.lab) { const a = S.settings.arch || { xw: {}, wd: {} }; if (g.won) a.wd[g.ed] = g.rows.length; S.settings.arch = a; save(); } }
   else if (g.done) {
     S.settings.wdLast = { day: g.day, n: g.rows.length, won: g.won, hint: g.hint };
     if (g.won) S.settings.wdDays = (S.settings.wdDays || []).filter(d => d !== g.day).concat([g.day]).sort().slice(-400);
@@ -2496,8 +2528,9 @@ function reportWhere() {
   return out.join(', ');
 }
 function feedbackUrl() {
-  const text = 'דיווח על טעות באפליקציה ארמית: מסכת שבת\n' + reportWhere() + '\nגרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '\n\nהטעות: ';
-  return 'https://wa.me/' + FEEDBACK_PHONE.replace(/\D/g, '') + '?text=' + encodeURIComponent(text);
+  const where = reportWhere();
+  const body = 'דיווח על טעות באפליקציה ארמית: מסכת שבת\n' + where + '\nגרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '\n\nהטעות: ';
+  return 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('דיווח על טעות: ' + where) + '&body=' + encodeURIComponent(body);
 }
 /* the beta lab (APK only) can move the date by whole days, to try editions and lifelines; elsewhere the shift is always 0 */
 function dayShift() { if (!BETA) return 0; try { return parseInt(localStorage.getItem('aramit-beta-shift') || '0', 10) || 0; } catch (e) { return 0; } }
@@ -2620,7 +2653,7 @@ function openSettings(confirmReset) {
     '<button class="link start" id="s-text">גיבוי ושחזור כטקסט</button></div>' +
     betaLabHtml() +
     '<button class="btn line wide" id="s-help">איך לומדים באפליקציה</button>' +
-    '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '"' + (NATIVE ? '' : ' target="_blank" rel="noopener"') + '>דיווח על טעות</a>' +
+    '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '">דיווח על טעות</a>' +
     (confirmReset
       ? '<div class="note">האיפוס ימחק את ההתקדמות ב־' + st.seen + ' ערכים, את המועדפים, את רשימת הטעויות, את השיאים ואת הפירושים שערכת. אי אפשר לבטל אותו.</div><div class="two"><button class="btn bad" id="s-reset-yes">למחוק הכול</button><button class="btn ghost" id="s-reset-no">ביטול</button></div>'
       : '<button class="btn line wide" id="s-reset">איפוס כל ההתקדמות</button>') +
@@ -2668,6 +2701,8 @@ function betaLabHtml() {
     '<p class="small muted">התאריך המדומה: ' + day.split('-').reverse().join('.') + ', מהדורה #' + xwEdition(day) + (sh ? ' (הזזה של ' + sh + ' ימים)' : ' (התאריך האמיתי)') + '.</p>' +
     '<p class="small">תשחץ: 🔥 ' + xi.n + ' 🛡️ ' + xi.shields + '/2. וורדל: 🔥 ' + wi.n + ' 🛡️ ' + wi.shields + '/2.</p>' +
     '<label for="lab-ed">מעבר למהדורה (1 עד ' + ((window.DAILY && window.DAILY.boards.length) || 120) + ')</label><div class="two"><input type="number" id="lab-ed" min="1" max="' + window.DAILY.boards.length + '" value="' + Math.min(window.DAILY.boards.length, Math.max(1, xwEdition(day))) + '"><button class="btn line" id="lab-go">מעבר</button></div>' +
+    '<label for="lab-ped">בדיקת מהדורה בלי להזיז את התאריך (לא נרשמת)</label><div class="three"><input type="number" id="lab-ped" min="1" max="' + window.DAILY.boards.length + '" value="' + Math.max(1, xwEdition(day)) + '"><button class="btn line" id="lab-pxw">תשחץ</button><button class="btn line" id="lab-pwd">וורדל</button></div>' +
+    '<button class="link start" id="lab-arch">כל המהדורות בארכיון (#1 עד #' + window.DAILY.boards.length + ')</button>' +
     '<div class="two"><button class="btn line" id="lab-day">סימולציית יום (+1)</button><button class="btn line" id="lab-reset">חזרה להיום</button></div>' +
     '<p class="small muted">ההזזה משנה רק את התאריך שהאפליקציה רואה. הרצף וחבלי ההצלה מחושבים מחדש לפי ימי הפתרון.</p></div>';
 }
@@ -2676,6 +2711,10 @@ function bindBetaLab() {
   const apply = n => { setShift(n); wd = null; if (xwStale()) xg = null; Object.keys(drawn).forEach(k => delete drawn[k]); openSettings(); render(false); toast('התאריך המדומה: ' + localDay().split('-').reverse().join('.') + ', מהדורה #' + xwEdition(localDay())); };
   $('lab-go').onclick = () => { const n = Math.min(window.DAILY.boards.length, Math.max(1, parseInt($('lab-ed').value, 10) || 1)); apply(dayShift() + n - xwEdition(localDay())); };
   $('lab-day').onclick = () => apply(dayShift() + 1);
+  const ped = () => Math.min(window.DAILY.boards.length, Math.max(1, parseInt($('lab-ped').value, 10) || 1));
+  $('lab-pxw').onclick = () => { const n = ped(); closeSheet(); openArchXW(n); };
+  $('lab-pwd').onclick = () => { const n = ped(); closeSheet(); openArchWD(n); };
+  $('lab-arch').onclick = () => openArchive();
   $('lab-reset').onclick = () => apply(0);
 }
 /* the first opening, for a new learner with nothing known yet: where they hold in the lesson, and how many of the most
@@ -2764,7 +2803,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
 
 /* hardware back button inside the Android app */
 try {
