@@ -387,3 +387,4 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .bk-note p{margin:0 0 8px}
 .bk-note .row{display:flex;gap:8px}
 .bk-note .btn{flex:1;padding:8px 10px}
+.xw .xname{color:var(--ink);font-weight:700}

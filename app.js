@@ -1918,7 +1918,7 @@ function xwFitBar() {
 function renderXW() {
   const g = xg;
   view.className = 'panel tight';
-  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">סיום</button></span></div>' +
+  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
     '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
     '<div class="xlow">' +
@@ -1983,7 +1983,13 @@ function xwPaint() {
   pb.innerHTML = pin ? XLOCK.on : XLOCK.off; pb.classList.toggle('on', pin); pb.setAttribute('aria-pressed', String(pin));
   pb.setAttribute('aria-label', pin ? 'הסמן נעול במשבצת: הקלדה מחליפה את האות בלי להתקדם' : 'נעילת הסמן במשבצת');
   xwFitClues();
-  $('xw-left').textContent = (g.arch ? '#' + g.b.ed + ' (ארכיון) ' + g.b.theme + ', ' : g.day && g.b.anchor ? '#' + g.b.ed + ' ' + g.b.theme + ', ' : g.b.words.length + ' מילים, ') + (left ? 'נשארו ' + left : 'הלוח מלא');
+  /* the top line says what this board is first (the daily crossword and its number, or a personal board), then how much is
+     left, and the theme last, where a narrow screen may cut it */
+  const daily = g.arch || (g.day && g.b.anchor);
+  $('xw-left').innerHTML = '<b class="xname">' + (daily ? 'התשחץ היומי #' + g.b.ed + (g.arch ? ' (ארכיון)' : '') : 'לוח אישי') + '</b> ' +
+    esc((left ? 'נשארו ' + left : 'הלוח מלא') + (daily && g.b.theme ? ', ' + g.b.theme : ', ' + g.b.words.length + ' מילים'));
+  /* the button beside it goes back while the board is open, and to the summary once every cell is filled */
+  const qb = $('quit'); if (qb) qb.textContent = g.b.L.every((ch, k) => !ch || g.typed[k]) ? 'סיכום' : 'חזרה';
   /* anything that changed height on this paint (a line of text that wrapped) must not push the keyboard under the tab bar */
   const kb = view.querySelector('.xkb'), tabs = document.getElementById('tabs'), grid = $('xw-grid');
   if (kb && tabs && grid && grid.style.width && kb.getBoundingClientRect().bottom > tabs.getBoundingClientRect().top + 1) xwFit();
@@ -2247,7 +2253,7 @@ function renderWordle() {
   g.rows.forEach(w => wdScore(w, g.ans).forEach((v, i) => { const c = w[i]; if (!st[c] || rank[v] > rank[st[c]]) st[c] = v; }));
   const keyCls = ch => { const v = st[norm(ch)]; return v ? ' class="k-' + v + '"' : ''; };
   const end = g.done ? wdEndHtml() : '';
-  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : '') + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">סיום</button></span></div>' +
+  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : '') + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
     (g.hint ? '<p class="small wclue">💡 ' + esc(wdChapter(g.e)) + '</p>' : '') +
     '<div class="wgrid" id="wd-grid" dir="rtl">' + rows.join('') + '</div>' + end +
     (g.done ? '' : '<div class="xlow"><div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
