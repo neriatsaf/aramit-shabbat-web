@@ -195,8 +195,8 @@ h3{font-family:var(--f-word);font-weight:700;font-size:1.05rem;margin:14px 0 0}
 .qtext{font-size:1.14rem;font-weight:600;line-height:1.5;text-align:start;width:100%;margin:0;overflow-wrap:anywhere}
 .quote{font-family:var(--f-word);font-size:1.08rem;line-height:1.65;margin:0;overflow-wrap:anywhere}
 /* arrow crossword, in plain colours: a light board in light mode, a soft dark one in dark mode */
-:root{--xanchor:#D4A84F;--xframe:#94A3B8;--xgap:#CBD5E1;--xv:#A3AEC0;--xl:#FFFFFF;--xlb:#CBD5E1;--xlt:#0F172A;--xon:#BFDBFE;--xcur:#FDE68A;--xcurb:#D97706;--xbad:#FECACA;--xbadt:#B91C1C;--xhint:#1D4ED8;--xk:#DBEAFE;--xkt:#1E3A8A;--xka:#1E3A8A;--xksep:#93C5FD;--xok:#16A34A;--xsol:#ECF7EF}
-:root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#141C2C;--xgap:#141C2C;--xv:#141C2C;--xl:#33415C;--xlb:#5C6F94;--xlt:#F1F5F9;--xon:#46639A;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A30;--xbadt:#FFC9C9;--xhint:#9CC8FF;--xk:#285596;--xkt:#E6EEFB;--xka:#FFFFFF;--xksep:#5C84C4;--xok:#4ADE80;--xsol:#2D4A55}
+:root{--xanchor:#D4A84F;--xframe:#94A3B8;--xgap:#CBD5E1;--xv:#A3AEC0;--xl:#FFFFFF;--xlb:#CBD5E1;--xlt:#0F172A;--xon:#BFDBFE;--xcur:#FDE68A;--xcurb:#D97706;--xbad:#FECACA;--xbadt:#B91C1C;--xhint:#6D28D9;--xhb:#EDE4FB;--xk:#DBEAFE;--xkt:#1E3A8A;--xka:#1E3A8A;--xksep:#93C5FD;--xok:#16A34A;--xsol:#ECF7EF;--xarw:#1D4ED8}
+:root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#141C2C;--xgap:#141C2C;--xv:#141C2C;--xl:#33415C;--xlb:#5C6F94;--xlt:#F1F5F9;--xon:#46639A;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A30;--xbadt:#FFC9C9;--xhint:#EBDDFF;--xhb:#55407F;--xk:#285596;--xkt:#E6EEFB;--xka:#FFFFFF;--xksep:#5C84C4;--xok:#4ADE80;--xsol:#2D4A55;--xarw:#BFD7FF}
 .panel.tight{padding-top:6px;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));overflow:hidden}
 body.xwmode .top{display:none}
 .xw>.row .link{min-height:34px;padding:4px 6px}
@@ -209,6 +209,9 @@ body.xwmode .top{display:none}
 .cell-letter{background:var(--xl);color:var(--xlt);box-shadow:inset 0 0 0 1px var(--xlb);font-family:var(--f-word);font-weight:700;font-size:min(5.2vw,1.35rem);display:flex;align-items:center;justify-content:center}
 .cell-letter.sol{background:var(--xsol)}
 .cell-letter.on{background:var(--xon)}
+/* in the active word, the letters already solved keep their green, and a letter given by a hint keeps its own colour */
+.cell-letter.on.sol{background:var(--xsol)}
+.cell-letter.hint,.cell-letter.on.hint{background:var(--xhb);color:var(--xhint)}
 .cell-letter.cur{background:var(--xcur);box-shadow:inset 0 0 0 2px var(--xcurb)}
 .cell-letter.bad{background:var(--xbad);color:var(--xbadt)}
 .cell-letter.hint{color:var(--xhint)}
@@ -223,20 +226,20 @@ body.xwmode .top{display:none}
 /* the definition of the current word: the gold frame goes around its own half, not the whole cell */
 .xq.sel::before{content:"";position:absolute;inset:0;box-shadow:inset 0 0 0 2px var(--xcurb);pointer-events:none;z-index:1}
 .xq{min-height:0;min-width:0;width:100%;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;padding:1px 2px}
-.xq.side-l{padding-left:12px}
-.cell-clue:not(.two) .xq.side-b{padding-bottom:11px}
-.cell-clue.two .xq.side-b{padding-left:12px}
 .cell-clue.two .xq+.xq{border-top:1px solid var(--xksep)}
 .xq em{display:block;max-width:100%;font-style:normal;font-family:var(--f-ui);font-size:9px;line-height:1.08;overflow:visible;overflow-wrap:normal;word-break:normal}
 .xq em.clip{overflow:hidden;max-height:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;text-overflow:ellipsis;overflow-wrap:anywhere}
 .xq.sel em{font-weight:700}
 .xq.done{padding-right:9px}
 .xq.done::after{content:"\2713";position:absolute;top:1px;right:1px;color:var(--xok);font-size:9px;font-weight:900;line-height:1}
-.xa{position:absolute;width:11px;height:11px;display:block;color:var(--xka);pointer-events:none;z-index:2}
+.xa{position:absolute;width:13px;height:13px;display:block;color:var(--xarw);pointer-events:none;z-index:2}
+/* the arrows sit outside the definition, in the first letter of the word, on the edge that touches the definition */
+.xa-l{right:0;top:calc(50% - 6.5px)}
+.xa-ld{right:0;top:calc(50% - 2px)}
+.xa-d{top:0;left:calc(50% - 6.5px)}
+.xa-dl{top:0;left:calc(50% - 10px)}
+.xa.done{opacity:.4}
 .xa svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}
-.xq.side-l .xa{left:0;top:calc(50% - 5.5px)}
-.cell-clue:not(.two) .xq.side-b .xa{bottom:0;left:calc(50% - 5.5px)}
-.cell-clue.two .xq.side-b .xa{bottom:0;left:0}
 .xbar{width:100%;flex-shrink:0;background:var(--surface);border:1px solid var(--line);border-inline-start:4px solid var(--brand);border-radius:10px;padding:4px 8px;box-sizing:border-box;height:calc(2.6rem + 10px);display:flex;align-items:center;gap:8px}
 .xbar .xdef{flex:1;min-width:0;margin:0;font-size:.98rem;line-height:1.3;max-height:2.6em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .xbar .xdef span{font-size:.82em;color:var(--muted);white-space:nowrap}
@@ -245,7 +248,7 @@ body.xwmode .top{display:none}
 .xbar .xlive i.gap{width:.45rem;border:0;cursor:default}
 .xbar .xlive i.cur{border-bottom-color:var(--gold);background:var(--soft);border-radius:4px 4px 0 0}
 .xbar .xlive i.bad{color:var(--bad);border-bottom-color:var(--bad)}
-.xbar .xlive i.hint{color:var(--brand)}
+.xbar .xlive i.hint{color:var(--xhint);background:var(--xhb);border-radius:4px 4px 0 0}
 .xtools{width:100%;display:flex;gap:4px}
 .xtools button:disabled{opacity:.4;cursor:default}
 .xtools button.pin{flex:0 0 44px;font-size:1.05rem;padding:0}
@@ -359,7 +362,6 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 /* 1.5.0: a definition cell whose words are solved is greyed, with a small ✓ in its corner */
 .cell-clue.solved{background:var(--soft);color:var(--muted)}
 .cell-clue .xq.done em{opacity:.55}
-.cell-clue .xq.done .xa{opacity:.45}
 /* the pin: an open lock in a quiet colour while off, a closed lock, bold and filled, while on */
 .xtools{gap:8px}
 .xtools button.pin{flex:0 0 48px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
@@ -398,7 +400,34 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .atag.fut{color:var(--gold);border-color:var(--gold)}
 .atag.now{color:var(--good);border-color:var(--good)}
 .arow.fut{opacity:.85}
-.labnav{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:4px 8px;margin:2px 0 4px;border:1px dashed var(--gold);border-radius:10px;font-size:.85rem}
-.labnav input{width:4.2em;padding:2px 4px;font-size:.85rem}
-.labnav .link{font-size:.85rem}
+.labnav{display:flex;align-items:center;gap:6px;padding:2px 6px;margin:0 0 2px;border:1px dashed var(--gold);border-radius:10px;font-size:.8rem;white-space:nowrap;min-height:34px}
+.labnav .lnc{flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis}
+.labnav .lnb{min-width:30px;height:28px;padding:0 6px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;font-size:1.1rem;line-height:1}
+.labnav .lnb.go{font-size:.9rem}
+.labnav .lnb:disabled{opacity:.35}
+.labnav input{width:3.6em;height:28px;padding:0 4px;font-size:.8rem;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;-moz-appearance:textfield}
+.labnav input::-webkit-outer-spin-button,.labnav input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.labnav .link{font-size:.8rem;padding:0 2px}
 .cell-letter.peek{color:var(--muted);opacity:.75}
+/* the quiz setup: one card per choice, the same even controls in each */
+.qsetup{display:flex;flex-direction:column;gap:12px}
+.qsetup h2{margin:0}
+.qcard{display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px}
+.qcard .seg{background:var(--soft)}
+.qcard .seg button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink);box-shadow:none}
+.qcard .seg.grid2 button:last-child:nth-child(odd){grid-column:1/-1}
+.qcard .qsub{display:flex;flex-direction:column;gap:6px;padding-top:2px}
+.qcard .qsub .pkpick .chip{font-size:.85rem;min-height:36px}
+.qcard .qsub .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.qcard .qcount{margin:0;font-size:.86rem;font-weight:700;color:var(--ink)}
+.qsetup .qbest{margin:0;text-align:center}
+.qsetup p.small{margin:0}
+/* the crossword: the ? button and "איך פותרים את התשחץ?" */
+.xhelp{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--brand);background:transparent;color:var(--brand);font-weight:800;font-size:1rem;line-height:1;margin-inline-end:10px;vertical-align:middle}
+.xhelpbox{display:flex;flex-direction:column;gap:12px;overflow-wrap:anywhere}
+.xhelpbox h2{margin:0}
+.xhl{margin:0;padding:0 18px 0 0;display:flex;flex-direction:column;gap:10px;line-height:1.55}
+.xhl li{padding-inline-start:2px}
+.xh-a{display:inline-block;width:1.15em;height:1.15em;vertical-align:-.2em;margin:0 2px;color:var(--brand);font-style:normal}
+.xh-a svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.xh-k{display:inline-block;padding:0 6px;border-radius:6px;background:var(--soft);font-weight:700;white-space:nowrap}

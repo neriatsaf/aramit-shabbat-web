@@ -387,18 +387,12 @@ function scopeLabel() {
 }
 /* the words of a chapter or a page are either all the words that appear there, or only those that appear there for the first time */
 function pkCount(k) { return kindList().filter(e => e.cn || SC.wmode === 'first' ? e.pk === k : !!(e.pkm & (1 << k))).length; }
-/* compact (the quiz): three main choices, and the rest behind "עוד אפשרויות" */
-let scMore = false;
+/* compact (the quiz): every choice in one even grid inside its card */
+function qCard(label, inner, id) { return '<section class="qcard"' + (id ? ' id="' + id + '"' : '') + '><span class="label">' + label + '</span>' + inner + '</section>'; }
 function scopeHtml(noKind, compact) {
   const items = scopeItems(), nf = kindList().filter(e => S.fav[pid(e)]).length, nm = kindList().filter(e => S.miss[pid(e)]).length;
   let bys = [['all', 'הכול'], ['perek', 'לפי פרק'], ['daf', 'לפי דף (טווח דפים)']].concat(SC.kind === 'concepts' ? [['topic', 'לפי נושא']] : [], [['seen', 'מה שכבר למדתי'], ['fav', 'מועדפים (' + nf + ')'], ['miss', 'טעויות חוזרות (' + nm + ')']]);
-  let moreBtn = '';
-  if (compact) {
-    const main = ['all', 'perek', 'seen'], open = scMore || main.indexOf(SC.by) < 0;
-    const label = { seen: 'מה שלמדתי' };
-    bys = bys.filter(b => main.indexOf(b[0]) >= 0).map(b => [b[0], label[b[0]] || b[1]]).concat(open ? bys.filter(b => main.indexOf(b[0]) < 0) : []);
-    moreBtn = '<button class="morebtn" id="sc-more" aria-expanded="' + open + '">עוד אפשרויות ' + (open ? '▴' : '▾') + '</button>';
-  }
+  if (compact) { const label = { daf: 'לפי דף', seen: 'מה שלמדתי' }; bys = bys.map(b => [b[0], label[b[0]] || b[1]]); }
   let sub = '';
   if (SC.by === 'perek') {
     sub = '<div class="pkpick" id="sc-pk"><button class="chip" data-v="-1" aria-pressed="' + (SC.pereks.length === 0) + '">כל הפרקים</button>' +
@@ -416,16 +410,17 @@ function scopeHtml(noKind, compact) {
   else if (SC.by === 'miss') sub = '<p class="small muted">ערכים שטעית בהם בחידון, בלימוד או במשחקים. ערך יוצא מהרשימה אחרי שתי תשובות נכונות ברצף.</p>';
   if ((SC.by === 'perek' || SC.by === 'daf') && SC.kind !== 'concepts')
     sub += '<div class="field"><span class="label">אילו מילים</span><div class="seg" id="sc-wm"><button data-v="any" aria-pressed="' + (SC.wmode !== 'first') + '">כל מה שמופיע שם</button><button data-v="first" aria-pressed="' + (SC.wmode === 'first') + '">רק מה שמופיע שם לראשונה</button></div></div>';
+  if (compact) return qCard('מה לתרגל', '<div class="seg grid2 qby" id="sc-by">' + bys.map(b => '<button data-v="' + b[0] + '" aria-pressed="' + (SC.by === b[0]) + '">' + b[1] + '</button>').join('') + '</div>' +
+    (sub ? '<div class="qsub">' + sub + '</div>' : '') + '<p class="qcount" id="sc-count">' + countLabel(items) + '</p>');
   return '<div class="field"><span class="label">מה לתרגל</span>' +
     (CN.length && !noKind ? '<div class="seg" id="sc-kind">' + ['words', 'concepts', 'both'].map(k => '<button data-v="' + k + '" aria-pressed="' + (SC.kind === k) + '">' + (k === 'both' ? 'שניהם' : KINDS[k]) + '</button>').join('') + '</div>' : '') +
-    '<div class="pkpick" id="sc-by">' + bys.map(b => '<button class="chip" data-v="' + b[0] + '" aria-pressed="' + (SC.by === b[0]) + '">' + b[1] + '</button>').join('') + moreBtn + '</div>' + sub +
+    '<div class="pkpick" id="sc-by">' + bys.map(b => '<button class="chip" data-v="' + b[0] + '" aria-pressed="' + (SC.by === b[0]) + '">' + b[1] + '</button>').join('') + '</div>' + sub +
     '<p class="small strong" id="sc-count">' + countLabel(items) + '.</p></div>';
 }
 function bindScope(again) {
   const done = () => { saveSc(); again(); };
   bindSeg('sc-kind', v => { SC.kind = v; if (SC.by === 'topic' && v !== 'concepts') SC.by = 'all'; done(); });
   bindSeg('sc-wm', v => { SC.wmode = v; done(); });
-  const mb = $('sc-more'); if (mb) mb.onclick = () => { scMore = !scMore; again(); };
   const by = $('sc-by'); if (by) by.querySelectorAll('button').forEach(b => { b.onclick = () => { SC.by = b.dataset.v; done(); }; });
   const pk = $('sc-pk'); if (pk) pk.querySelectorAll('button').forEach(b => { b.onclick = () => {
     const k = +b.dataset.v;
@@ -1164,24 +1159,27 @@ function startQuiz(items, level, extra) {
 /* from the whole store, the easy and middle levels ask only the chosen store (the common words); the expanded store,
    rare words included, joins at the hard level */
 function quizItems() { const all = scopeItems(); return SC.by === 'all' && quizCfg.level !== 'hard' ? all.filter(e => e.cn || !e.ext) : all; }
+/* the quiz has no levels to choose: every quiz asks at the middle level (look-alike answers from the whole deck) */
+const QUIZ_LEVEL = 'mid';
+function lenCard(n, noun) {
+  return qCard('מספר שאלות', '<div class="seg" id="qlen">' + [10, 20, 40].map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.len === k) + '">' + k + '</button>').join('') + '</div>' +
+    (n && n < quizCfg.len ? '<p class="small muted">בבחירה הזו יש ' + noun(n) + ', וזה יהיה אורך החידון.</p>' : ''));
+}
 function renderQuizSetup() {
   if (quizCfg.mode === 'content' && CT.length) return renderTQSetup();
-  const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + quizCfg.level, b = S.best[key];
-  const few = narrowed() && SC.kind !== 'words' && src.filter(e => e.cn).length < 4 && src.some(e => e.cn);
+  quizCfg.level = QUIZ_LEVEL;
   if (SC.kind === 'both') { SC.kind = 'words'; saveSc(); }
-  view.innerHTML = '<h2>חידון אמריקאי</h2>' + modeSeg() + scopeHtml(true, true) +
+  const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + QUIZ_LEVEL, b = S.best[key];
+  const few = narrowed() && SC.kind !== 'words' && src.filter(e => e.cn).length < 4 && src.some(e => e.cn);
+  view.innerHTML = '<div class="qsetup"><h2>חידון אמריקאי</h2>' + modeSeg() + scopeHtml(true, true) +
     (few ? '<p class="small muted">בבחירה הזו יש פחות מארבעה מושגים, ולכן התשובות השגויות יושלמו משאר המילון, קודם מאותו נושא.</p>' : '') +
-    /* the level and the number of questions share one row */
-    '<div class="qrow"><div class="field"><span class="label">רמת קושי</span><div class="seg" id="qlevel">' + Object.keys(LEVELS).map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.level === k) + '">' + LEVELS[k][0] + '</button>').join('') + '</div></div>' +
-    '<div class="field"><span class="label">שאלות</span><div class="seg" id="qlen">' + [10, 20, 40].map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.len === k) + '">' + k + '</button>').join('') + '</div></div></div>' +
-    '<p class="small muted">' + levelNote() + '.' + (n && n < quizCfg.len ? ' בבחירה הזו יש ' + n + ' ערכים, וזה יהיה מספר השאלות.' : '') + '</p>' +
+    lenCard(n, k => k + ' ערכים') +
     '<button class="btn wide" id="qstart"' + (n ? '' : ' disabled') + '>' + (n ? 'התחלת החידון' : 'אין ערכים בבחירה הזו') + '</button>' +
-    (b ? '<p class="small muted">התוצאה הטובה ביותר שלך בסוג הזה וברמה הזו: ' + b + '%</p>' : '');
+    (b ? '<p class="small muted qbest">התוצאה הטובה ביותר שלך: ' + b + '%</p>' : '') + '</div>';
   bindMode(); bindScope(renderQuizSetup);
-  bindSeg('qlevel', v => { quizCfg.level = v; renderQuizSetup(); });
   bindSeg('qlen', v => { quizCfg.len = +v; renderQuizSetup(); });
-  const level = quizCfg.level, len = quizCfg.len;
-  const go = () => { const items = quizItems(); if (!items.length) { toast('אין ערכים בבחירה הזו'); return; } startQuiz(sample(items, Math.min(len, items.length)), level, { bestKey: key, again: go }); };
+  const len = quizCfg.len;
+  const go = () => { const items = quizItems(); if (!items.length) { toast('אין ערכים בבחירה הזו'); return; } startQuiz(sample(items, Math.min(len, items.length)), QUIZ_LEVEL, { bestKey: key, again: go }); };
   $('qstart').onclick = go;
 }
 /* the short daily round that the reminder opens: ten entries, mistakes first, then what is due, then what was learned, then anything */
@@ -1197,7 +1195,7 @@ function renderQuiz() {
   if (!q) { finishQuiz(); return; }
   if (q.ct) { renderTQ(); return; }
   const shown = z.stage === 'shown';
-  view.innerHTML = '<div class="row between"><span class="small muted">' + (z.daily ? 'חזרה יומית, ' : '') + 'שאלה ' + (z.pos + 1) + ' מתוך ' + z.qs.length + ' · ' + LEVELS[z.level][0] + '</span><button class="link" id="quit">סיום</button></div>' +
+  view.innerHTML = '<div class="row between"><span class="small muted">' + (z.daily ? 'חזרה יומית, ' : '') + 'שאלה ' + (z.pos + 1) + ' מתוך ' + z.qs.length + '</span><button class="link" id="quit">סיום</button></div>' +
     '<div class="progress"><i style="width:' + Math.round(z.pos / z.qs.length * 100) + '%"></i></div>' +
     '<section class="card">' + promptHtml(q) + optionsHtml(q, shown, z.picked) +
     (shown ? afterHtml(q.e) + '<button class="btn wide" id="next">' + (z.pos + 1 < z.qs.length ? 'הבא' : 'לתוצאות') + '</button>' : '') + '</section>';
@@ -1259,7 +1257,7 @@ function ctSource(x) { return ['גמרא', 'משנה', 'משנה וגמרא'][x.
 function modeSeg() {
   const cur = quizCfg.mode === 'content' ? 'content' : SC.kind;
   const opts = [['words', KINDS.words]].concat(CN.length ? [['concepts', KINDS.concepts]] : [], CT.length ? [['content', 'תוכן הסוגיה']] : []);
-  return opts.length > 1 ? '<div class="field"><span class="label">על מה החידון</span><div class="seg" id="qmode">' + opts.map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>' : '';
+  return opts.length > 1 ? qCard('על מה החידון', '<div class="seg" id="qmode">' + opts.map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>').join('') + '</div>') : '';
 }
 function bindMode() {
   bindSeg('qmode', v => {
@@ -1269,6 +1267,7 @@ function bindMode() {
   });
 }
 function renderTQSetup() {
+  TQ.level = -1;   /* no levels: questions of every level */
   const items = tqItems(), n = items.length, b = S.best.tquiz, inLevel = CT.filter(x => TQ.level < 0 || x.lv === TQ.level);
   const opts = sel => { let h = ''; for (let d = CT_D0; d <= CT_D1; d++) h += '<option value="' + d + '"' + (sel === d ? ' selected' : '') + '>דף ' + hebNum(d) + '</option>'; return h; };
   let sub = '';
@@ -1279,21 +1278,17 @@ function renderTQSetup() {
     PEREKS.map((pk, k) => { const ts = CTOPICS.map((t, j) => t.pk === k ? '<option value="' + j + '"' + (TQ.topic === j ? ' selected' : '') + '>' + esc(t.n) + ' (' + inLevel.filter(x => x.t === j).length + ')</option>' : '').join(''); return ts ? '<optgroup label="' + esc(ordPk(k) + '. ' + pk[0]) + '">' + ts + '</optgroup>' : ''; }).join('') + '</select>';
   else if (TQ.by === 'daf') sub = '<div class="two"><div class="field"><label for="tq-d0">מדף</label><select id="tq-d0">' + opts(TQ.d0) + '</select></div>' +
     '<div class="field"><label for="tq-d1">עד דף</label><select id="tq-d1">' + opts(TQ.d1) + '</select></div></div>';
-  view.innerHTML = '<h2>חידון אמריקאי</h2>' + modeSeg() +
-    '<p class="small muted">שאלות על מהלך הסוגיות: מה נאמר, מי סובר מה, ומה הטעם. יש שאלות על כל פרקי המסכת, מדף ' + hebNum(CT_D0) + ' עד דף ' + hebNum(CT_D1) + '.</p>' +
-    '<div class="field"><span class="label">רמה</span><div class="seg" id="tq-lv"><button data-v="-1" aria-pressed="' + (TQ.level < 0) + '">הכול</button>' +
-    CLV.map((l, k) => '<button data-v="' + k + '" aria-pressed="' + (TQ.level === k) + '">' + l + '</button>').join('') + '</div>' +
-    '<p class="small muted">קלה: מה נאמר ומי אמר. בינונית: מחלוקות, מי סובר מה. קשה: הטעם, הסברה והנפקא מינה.</p></div>' +
-    '<div class="field"><span class="label">אילו סוגיות</span><div class="seg grid2" id="tq-by"><button data-v="all" aria-pressed="' + (TQ.by === 'all') + '">הכול</button>' +
-    '<button data-v="perek" aria-pressed="' + (TQ.by === 'perek') + '">לפי פרק</button><button data-v="topic" aria-pressed="' + (TQ.by === 'topic') + '">לפי נושא</button><button data-v="daf" aria-pressed="' + (TQ.by === 'daf') + '">לפי דף</button></div>' + sub +
-    '<p class="small strong" id="tq-count">' + (n ? 'בבחירה הזו: ' + nQuestions(n) : 'אין שאלות בבחירה הזו') + '.</p></div>' +
-    '<div class="field"><span class="label">מספר שאלות</span><div class="seg" id="qlen">' + [10, 20, 40].map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.len === k) + '">' + k + '</button>').join('') + '</div>' +
-    (n && n < quizCfg.len ? '<p class="small muted">בבחירה הזו יש ' + nQuestions(n) + ', וזה יהיה אורך החידון.</p>' : '') + '</div>' +
+  view.innerHTML = '<div class="qsetup"><h2>חידון אמריקאי</h2>' + modeSeg() +
+    qCard('אילו סוגיות', '<p class="small muted">שאלות על מהלך הסוגיות: מה נאמר, מי סובר מה, ומה הטעם, מדף ' + hebNum(CT_D0) + ' עד דף ' + hebNum(CT_D1) + '.</p>' +
+      '<div class="seg grid2 qby" id="tq-by"><button data-v="all" aria-pressed="' + (TQ.by === 'all') + '">הכול</button>' +
+      '<button data-v="perek" aria-pressed="' + (TQ.by === 'perek') + '">לפי פרק</button><button data-v="topic" aria-pressed="' + (TQ.by === 'topic') + '">לפי נושא</button><button data-v="daf" aria-pressed="' + (TQ.by === 'daf') + '">לפי דף</button></div>' +
+      (sub ? '<div class="qsub">' + sub + '</div>' : '') +
+      '<p class="qcount" id="tq-count">' + (n ? nQuestions(n) : 'אין שאלות בבחירה הזו') + '</p>') +
+    lenCard(n, nQuestions) +
     '<button class="btn wide" id="qstart"' + (n ? '' : ' disabled') + '>' + (n ? 'התחלת החידון' : 'אין שאלות בבחירה הזו') + '</button>' +
-    (b ? '<p class="small muted">התוצאה הטובה ביותר שלך בחידון התוכן: ' + b + '%</p>' : '');
+    (b ? '<p class="small muted qbest">התוצאה הטובה ביותר שלך בחידון התוכן: ' + b + '%</p>' : '') + '</div>';
   bindMode();
   const done = () => { saveTq(); renderTQSetup(); };
-  bindSeg('tq-lv', v => { TQ.level = +v; done(); });
   bindSeg('tq-by', v => { TQ.by = v; done(); });
   bindSeg('qlen', v => { quizCfg.len = +v; renderTQSetup(); });
   const pkEl = $('tq-pk'); if (pkEl) pkEl.querySelectorAll('button').forEach(b => { b.onclick = () => {
@@ -1874,18 +1869,19 @@ function openArchive() {
 /* 🛠️ the beta bar above an archived board or word: the previous and next edition, a jump to any number, and a look at the solution */
 function labNavHtml(g, ed, p) {
   if (!BETA || !g.arch || !window.DAILY) return '';
-  const max = window.DAILY.boards.length;
-  return '<div class="labnav"><button class="link" id="' + p + '-prev"' + (ed <= 1 ? ' disabled' : '') + '>→ הקודם</button>' +
-    '<span class="small">#' + ed + ' ' + archTag(ed) + ' ' + edDay(ed).split('-').reverse().join('.') + '</span>' +
-    '<button class="link" id="' + p + '-next"' + (ed >= max ? ' disabled' : '') + '>הבא ←</button>' +
-    '<input type="number" id="' + p + '-ed" min="1" max="' + max + '" value="' + ed + '" aria-label="מספר מהדורה"><button class="link" id="' + p + '-go">מעבר</button>' +
+  const max = window.DAILY.boards.length, d = edDay(ed).split('-');
+  /* one short line: previous, the edition and its day, next, a number to jump to, and the solution */
+  return '<div class="labnav"><button class="lnb" id="' + p + '-prev" aria-label="המהדורה הקודמת"' + (ed <= 1 ? ' disabled' : '') + '>›</button>' +
+    '<span class="lnc">#' + ed + ' ' + archTag(ed) + ' <span class="muted">' + d[2] + '.' + d[1] + '</span></span>' +
+    '<button class="lnb" id="' + p + '-next" aria-label="המהדורה הבאה"' + (ed >= max ? ' disabled' : '') + '>‹</button>' +
+    '<input type="number" inputmode="numeric" id="' + p + '-ed" min="1" max="' + max + '" placeholder="#" aria-label="מעבר למהדורה לפי מספר"><button class="lnb go" id="' + p + '-go" aria-label="מעבר">↵</button>' +
     '<button class="link" id="' + p + '-peek">' + (g.peek ? 'הסתר פתרון' : 'הצג פתרון') + '</button></div>';
 }
 function bindLabNav(g, ed, open, repaint, p) {
   if (!$(p + '-prev')) return;
   const max = window.DAILY.boards.length, go = n => open(Math.min(max, Math.max(1, n)));
   $(p + '-prev').onclick = () => go(ed - 1); $(p + '-next').onclick = () => go(ed + 1);
-  $(p + '-go').onclick = () => go(parseInt($(p + '-ed').value, 10) || ed);
+  $(p + '-go').onclick = () => { const n = parseInt($(p + '-ed').value, 10); if (n) go(n); };
   $(p + '-ed').onkeydown = e => { if (e.key === 'Enter') $(p + '-go').click(); };
   $(p + '-peek').onclick = () => { g.peek = !g.peek; repaint(); };
 }
@@ -1913,6 +1909,23 @@ function xwOpen(g) {
   nav('xw', 'board', R.tab === 'xw' && R.sub === 'review');
 }
 const XKEYS = ['קראטוןםפ', 'שדגכעיחלךף', 'זסבהנמצתץ'];
+/* "איך פותרים את התשחץ?": opens by itself the first time a crossword (daily or personal) is opened, then from the ? button.
+   It counts as seen once it is closed. Tests (?test) open it by themselves only when they ask for it (&xwhelp) */
+const XW_HELP_KEY = 'aramit-xw-help-seen';
+const XW_HELP_AUTO = !/[?&]test\b/.test(location.search) || /[?&]xwhelp\b/.test(location.search);
+function xwHelpSeen() { try { return localStorage.getItem(XW_HELP_KEY) === '1'; } catch (x) { return true; } }
+function openXWHelp() {
+  const ar = t => '<i class="xh-a" aria-hidden="true">' + XARROW[t] + '</i>';
+  openSheet('<div class="xhelpbox"><h2>איך פותרים את התשחץ?</h2><ul class="xhl">' +
+    '<li><b>החצים והכיוון.</b> ההגדרות נמצאות בתוך משבצות הלוח, בעברית. החץ מראה מאיפה מתחילה התשובה ולאיזה כיוון כותבים: ' + ar('l') + ' שמאלה, ' + ar('d') + ' למטה, ' + ar('dl') + ' ' + ar('ld') + ' מתחילים במשבצת הסמוכה ופונים. <b>התשובות הן מילים בארמית ומושגים מעולם התורה.</b></li>' +
+    '<li><b>משבצת מפוצלת ומסגרת זהב.</b> במשבצת עם שתי הגדרות, לחיצה בוחרת אחת מהן. מסגרת הזהב מסמנת איזו הגדרה פעילה כרגע.</li>' +
+    '<li><b>ביטויים וראשי תיבות.</b> <span class="xh-k">(3, 4)</span> מציין ביטוי בן שתי מילים: כותבים ברצף, בלי רווח. <span class="xh-k">(ר"ת)</span> מציין ראשי תיבות: כותבים את האותיות בלי גרשיים, למשל <span class="xh-k">שס</span> או <span class="xh-k">רמבם</span>.</li>' +
+    '<li><b>מילים פתורות ורמזים.</b> מילה שנפתרה נצבעת וננעלת, כדי לעזור בהצטלבויות. נתקעתם? כפתור הרמז 💡 חושף אות אחת במילה הפעילה (שלושה רמזים לכל לוח), ו"ניקוי מילה" מוחק אותה כדי להתחיל מחדש.</li>' +
+    '</ul><button class="btn wide" id="xh-ok">הבנתי, בואו נתחיל</button></div>');
+  const sh = $('sheet'), done = () => { try { localStorage.setItem(XW_HELP_KEY, '1'); } catch (x) { /* storage blocked */ } closeSheet(); };
+  $('xh-ok').onclick = done;
+  if (sh) sh.onclick = ev => { if (ev.target.id === 'sheet') done(); };
+}
 const XARROW = {
   l: '<svg viewBox="0 0 10 10"><path d="M9 5H1.5M4.5 2L1.5 5l3 3"/></svg>',
   d: '<svg viewBox="0 0 10 10"><path d="M5 1v7.5M2 5.5l3 3 3-3"/></svg>',
@@ -1925,14 +1938,16 @@ function xwShow(w, k) { return xwLetters(w.e.w).charAt(w.cells.indexOf(k)); }
 /* three kinds of cell: a letter of at least one word, a definition, and a void that belongs to nothing.
    The grid is laid out right to left, so column 0 is drawn first and stands on the right */
 function xwSolved(w) { return w.cells.every(k => xg.typed[k] && norm(xg.typed[k]) === xg.b.L[k]); }
-/* a definition cell shows each definition in its own block, with its own single arrow on the edge where its word begins:
-   the left edge for a word that starts on the left (straight left, or left and then down), the bottom edge for a word
-   that starts below (straight down, or down and then left). In a shared cell the left-starting word is always on top,
-   so its arrow sits on the left edge of the top half, and the other on the bottom edge of the bottom half */
+/* a definition cell shows each definition in its own block. The arrow of each definition sits outside it, in the first letter
+   of its word, on the edge that touches the definition: the right edge for a word that starts on the left (straight left, or
+   left and then down), the top edge for a word that starts below (straight down, or down and then left).
+   In a shared cell the left-starting word is always on top */
 const XLEFT = { l: 1, ld: 1 };
 function xwBoardHtml() {
   /* the gold frame marks the anchor while it is open; once it is solved it is a word like the others */
   const g = xg, b = g.b, act = b.words[g.act], on = new Set(act.cells), anchor = new Set(b.anchor && !xwSolved(b.words[0]) ? b.words[0].cells : []);
+  const arrows = {};
+  b.K.forEach(ks => { if (ks) ks.forEach(x => { const f = b.words[x.wi].cells[0]; (arrows[f] = arrows[f] || []).push(x); }); });
   let h = '';
   for (let r = 0; r < b.R; r++) for (let c = 0; c < b.C; c++) {
     const k = r * b.C + c;
@@ -1940,14 +1955,15 @@ function xwBoardHtml() {
       const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (anchor.has(k) ? ' anchor' : '') + (xwLocked(k) ? ' lock' : '') +
         (g.cw[k].some(i => xwSolved(b.words[i])) ? ' sol' : '');   /* a letter of a solved word: a slightly different shade */
       const pk = g.peek && !g.typed[k];   /* 🛠️ beta: the solution shows faint in the cells not filled */
-      h += '<button class="' + cls + (pk ? ' peek' : '') + '" data-k="' + k + '" aria-label="משבצת">' + esc(pk ? b.L[k] : norm(g.typed[k])) + '</button>';
+      const ar = (arrows[k] || []).map(x => '<i class="xa xa-' + x.t + (xwSolved(b.words[x.wi]) ? ' done' : '') + '" data-wi="' + x.wi + '" aria-hidden="true">' + XARROW[x.t] + '</i>').join('');
+      h += '<button class="' + cls + (pk ? ' peek' : '') + '" data-k="' + k + '" aria-label="משבצת">' + esc(pk ? b.L[k] : norm(g.typed[k])) + ar + '</button>';
     } else if (b.K[k]) {
       const ks = b.K[k].slice().sort((x, y) => (XLEFT[y.t] ? 1 : 0) - (XLEFT[x.t] ? 1 : 0)), two = ks.length > 1;
       h += '<button class="cell-clue' + (ks.some(x => x.wi === g.act) ? ' kon' : '') + (two ? ' two' : '') + (ks.every(x => xwSolved(b.words[x.wi])) ? ' solved' : '') + '" data-k="' + k + '">' +
         ks.map(x => {
           const side = XLEFT[x.t] ? 'side-l' : 'side-b';
           return '<span class="xq ' + side + (x.wi === g.act ? ' sel' : '') + (xwSolved(b.words[x.wi]) ? ' done' : '') + '" data-t="' + x.t + '" data-wi="' + x.wi + '">' +
-            '<em>' + esc(xwClue(b.words[x.wi].e)) + '</em><i class="xa xa-' + x.t + '">' + XARROW[x.t] + '</i></span>';
+            '<em>' + esc(xwClue(b.words[x.wi].e)) + '</em></span>';
         }).join('') + '</button>';
     } else h += '<div class="' + (g.out.has(k) ? 'cell-out' : 'cell-void') + '" data-k="' + k + '"></div>';
   }
@@ -2028,7 +2044,7 @@ function xwFitBar() {
 function renderXW() {
   const g = xg;
   view.className = 'panel tight';
-  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day || g.arch ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
+  view.innerHTML = '<div class="xw"><div class="row between"><span class="small muted"><b class="xtime" id="xw-time">' + mmss(g.secs || 0) + '</b> <span id="xw-left"></span></span><span>' + (g.day || g.arch ? '' : '<button class="link" id="xw-new">לוח חדש</button> ') + '<button class="xhelp" id="xw-help" aria-label="איך משחקים?">?</button><button class="link" id="quit">חזרה</button></span></div>' +
     labNavHtml(g, g.b.ed, 'lx') +
     '<div class="xbar" id="xw-bar" aria-live="polite"></div>' +
     '<div class="xgrid" id="xw-grid" dir="rtl" style="grid-template-columns:repeat(' + g.b.C + ',1fr);grid-template-rows:repeat(' + g.b.R + ',1fr)"></div>' +
@@ -2038,6 +2054,8 @@ function renderXW() {
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
   xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350);
   bindLabNav(g, g.b.ed, openArchXW, () => { renderXW(); }, 'lx');
+  $('xw-help').onclick = openXWHelp;
+  if (XW_HELP_AUTO && !xwHelpSeen() && !sheetOpen) setTimeout(() => { if (R.tab === 'xw' && R.sub === 'board' && !sheetOpen) openXWHelp(); }, 250);
   g.open = true; xwSave();
   xwClock();
   /* a solved board offers its summary in the bar, so the button above goes back; a full board not yet right opens the summary */
@@ -2400,12 +2418,17 @@ function renderWordle() {
 function wdFit() {
   const grid = $('wd-grid'); if (!grid) return;
   const tabs = document.getElementById('tabs'); if (tabs) view.style.paddingBottom = (tabs.offsetHeight + 4) + 'px';
-  const kb = view.querySelector('.xkb'); if (kb) kb.style.setProperty('--kh', '50px');
-  const box = view.querySelector('.wd'), cs = getComputedStyle(view), gap = parseFloat(getComputedStyle(box).rowGap) || 0;
-  let others = 0, n = 0; for (const el of box.children) { if (el !== grid) { others += el.offsetHeight; n++; } }
-  const free = view.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - others - gap * n - 4;
+  const kb = view.querySelector('.xkb'), box = view.querySelector('.wd'), cs = getComputedStyle(view), gap = parseFloat(getComputedStyle(box).rowGap) || 0;
+  /* on a short or crowded screen the keys get lower before the tiles get too small to read */
+  let free = 0;
+  for (const kh of [50, 44, 38, 34]) {
+    if (kb) kb.style.setProperty('--kh', kh + 'px');
+    let others = 0, n = 0; for (const el of box.children) { if (el !== grid) { others += el.offsetHeight; n++; } }
+    free = view.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - others - gap * n - 4;
+    if (!kb || (free - 30) / 6 >= 34) break;
+  }
   const wide = view.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-  const t = Math.floor(Math.max(34, Math.min((wide - 24) / 5, (free - 30) / 6, 62)));
+  const t = Math.floor(Math.max(24, Math.min((wide - 24) / 5, (free - 30) / 6, 62)));
   grid.style.setProperty('--wt', t + 'px');
 }
 /* the word of a day that has ended gives way to today's word as soon as the reader touches the board */
