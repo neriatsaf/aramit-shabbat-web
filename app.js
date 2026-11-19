@@ -2352,13 +2352,32 @@ document.addEventListener('keydown', ev => {
 const WKEY = 'aramit-shabbat-wordle';
 const W_FIN = { 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' };
 let wd = null, WDICT = null;
+/* a guess counts when it is a real word: any word of five letters in the app (the dictionary with its other spellings, the
+   concepts, the general terms and the bank), or a Hebrew word of five letters from hewords.js. The word of the day is
+   always from the Wordle list of the tractate (daily-boards.js); hewords.js only decides what may be guessed.
+   hewords.js (about 150 KB) loads when the Wordle opens, not with the page */
 function wdDict() {
   if (WDICT) return WDICT;
   WDICT = new Set();
   const add = w => String(w).split(/\s+/).forEach(t => { if (/["'׳״]/.test(t)) return; const L = norm(xwLetters(t)); if (L.length === 5) WDICT.add(L); });
-  D.forEach(e => { add(e.w); e.v.forEach(add); }); CN.forEach(c => add(c.w)); XE.forEach(x => add(x.w));
+  D.forEach(e => { add(e.w); e.v.forEach(add); }); CN.forEach(c => add(c.w)); XE.forEach(x => add(x.w)); BK.forEach(x => add(x.w));
   return WDICT;
 }
+let HEW = null, HEW_P = null, HEW_FAIL = false;
+function heWordsLoad() {
+  if (window.HE_WORDS5 || HEW_FAIL) return Promise.resolve();
+  if (!HEW_P) HEW_P = new Promise(res => {
+    const el = document.createElement('script'); el.src = 'hewords.js';
+    el.onload = () => res(); el.onerror = () => { HEW_FAIL = true; res(); };
+    document.head.appendChild(el);
+  });
+  return HEW_P;
+}
+function heWords() {
+  if (!HEW && window.HE_WORDS5) { const t = window.HE_WORDS5; HEW = new Set(); for (let i = 0; i + 5 <= t.length; i += 5) HEW.add(t.slice(i, i + 5)); }
+  return HEW;
+}
+function wdValid(w) { w = norm(w); const h = heWords(); return wdDict().has(w) || !!(h && h.has(w)); }
 function wdShow(ch, i) { return i === 4 && W_FIN[ch] ? W_FIN[ch] : ch; }
 function wdScore(g, ans) {
   const out = ['x', 'x', 'x', 'x', 'x'], left = {};
@@ -2384,7 +2403,7 @@ function wdChapter(e) {
 }
 function startWordle() { wd = wdToday(); if (!wd) { toast('המילה היומית לא נמצאה'); return; } nav('games', 'wordle'); }
 function renderWordle() {
-  const g = wd;
+  const g = wd; heWordsLoad();
   view.className = 'panel tight';
   const rows = [];
   for (let r = 0; r < 6; r++) {
@@ -2439,7 +2458,9 @@ function wdEnter() {
   if (wdRoll()) return;
   const g = wd; if (g.done) return;
   if (g.cur.length < 5) { toast('צריך חמש אותיות'); return; }
-  if (!wdDict().has(g.cur) && g.cur !== g.ans) { toast('המילה הזו לא נמצאת במאגר של האפליקציה'); const rr = view.querySelectorAll('.wrow')[g.rows.length]; if (rr) { rr.classList.remove('shake'); void rr.offsetWidth; rr.classList.add('shake'); } return; }
+  /* the Hebrew words may still be loading: wait for them once, then check again */
+  if (!wdValid(g.cur) && g.cur !== g.ans && !window.HE_WORDS5 && !HEW_FAIL) { const cur = g.cur; heWordsLoad().then(() => { if (wd === g && g.cur === cur && !g.done) wdEnter(); }); return; }
+  if (!wdValid(g.cur) && g.cur !== g.ans) { toast('המילה לא נמצאה במילון. נסו מילה אחרת'); const rr = view.querySelectorAll('.wrow')[g.rows.length]; if (rr) { rr.classList.remove('shake'); void rr.offsetWidth; rr.classList.add('shake'); } return; }
   g.rows.push(g.cur); g.cur = '';
   if (g.rows[g.rows.length - 1] === g.ans) { g.done = true; g.won = true; }
   else if (g.rows.length >= 6) g.done = true;
@@ -2686,6 +2707,7 @@ function openSettings(confirmReset) {
     (CN.length ? '<p>מילון המושגים כולל ' + CN.length + ' מושגים מן המשנה ומן הגמרא. מראי המקום נבדקו מול נוסח המסכת, וההסברים קצרים ואינם תחליף ללימוד הסוגיה.</p>' : '') +
     '<p>הפירושים קצרים ונועדו לעזור בקריאה שוטפת. הם אינם תחליף לרש"י ולמפרשים, ובמילה שיש לה כמה מובנים ייתכן שהפירוש לא יתאים לכל מקום. אפשר לתקן כל פירוש במילון, והתיקון נשמר במכשיר שלך.</p>' +
     '<p>הספירה נעשתה על נוסח הגמרא שבספריא (מהדורת ויליאם דוידסון, קורן). הגופנים: פרנק ריהל ליברה ואסיסטנט, ברישיון פתוח (OFL).</p>' +
+    '<p>בוורדל אפשר לנחש גם מילים עבריות רגילות. רשימת המילים לקוחה ממאגר שכיחות המילים של הרמיט דייב, שנבנה מכתוביות סרטים (OpenSubtitles), ברישיון CC BY-SA 4.0.</p>' +
     '<p>האפליקציה פועלת בלי רשת ואינה אוספת שום מידע. ההתקדמות נשמרת במכשיר בלבד. גרסה ' + VERSION + '</p></div>');
   $('s-close').onclick = closeSheet;
   bindSeg('s-npd', v => { S.settings.newPerDay = +v; save(); openSettings(); render(); });
@@ -2826,7 +2848,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
 
 /* hardware back button inside the Android app */
 try {
