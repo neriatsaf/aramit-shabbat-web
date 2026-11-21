@@ -210,10 +210,20 @@ function dpBind(id, o) {
     const strip = strips[r]; let t = 0, touched = false;
     /* while nothing is chosen, only a finger, the mouse or the wheel chooses (a scroll the page makes by itself does not) */
     ['pointerdown', 'touchstart', 'wheel', 'keydown'].forEach(ev => strip.addEventListener(ev, () => { touched = true; }, { passive: true }));
-    const settle = () => { if (Date.now() < quiet || !box.isConnected || (box.classList.contains('none') && !touched)) return; const b = nearest(strip); if (!b || (b.getAttribute('aria-pressed') === 'true' && !box.classList.contains('none'))) return;
+    const settle = () => { if (drag || Date.now() < quiet || !box.isConnected || (box.classList.contains('none') && !touched)) return; const b = nearest(strip); if (!b || (b.getAttribute('aria-pressed') === 'true' && !box.classList.contains('none'))) return;
       if (r === 'pk') choosePk(+b.dataset.v, false); else choosePage(b, false); };
     strip.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(settle, 160); }, { passive: true });
-    strip.addEventListener('click', ev => { const b = ev.target.closest('.dpi'); if (!b) return;
+    /* a mouse drags the strip too (a finger and a trackpad scroll it by themselves); a drag is not a click */
+    let drag = null, dragged = false;
+    strip.addEventListener('pointerdown', ev => { if (ev.pointerType !== 'mouse' || ev.button !== 0) return;
+      drag = { x: ev.clientX, left: strip.scrollLeft }; dragged = false; });
+    strip.addEventListener('pointermove', ev => { if (!drag) return; const dx = ev.clientX - drag.x;
+      if (!dragged && Math.abs(dx) > 4) { dragged = true; strip.classList.add('dragging'); try { strip.setPointerCapture(ev.pointerId); } catch (x) { /* gone */ } }
+      if (dragged) { strip.scrollLeft = drag.left - dx; ev.preventDefault(); } });
+    const drop = () => { if (!drag) return; drag = null; if (dragged) { strip.classList.remove('dragging'); clearTimeout(t); t = setTimeout(settle, 60); } };
+    strip.addEventListener('pointerup', drop); strip.addEventListener('pointercancel', drop); strip.addEventListener('lostpointercapture', drop);
+    strip.addEventListener('click', ev => { if (dragged) { dragged = false; ev.preventDefault(); ev.stopPropagation(); return; }
+      const b = ev.target.closest('.dpi'); if (!b) return;
       if (r === 'pk') { if (+b.dataset.v !== +box.dataset.pk || box.classList.contains('none')) choosePk(+b.dataset.v, true); else centre(strip, true); } else choosePage(b, true); });
   });
   centre(strips.pk, false); centre(strips.d, false);

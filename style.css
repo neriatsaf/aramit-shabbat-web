@@ -443,3 +443,6 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .dprange{display:flex;flex-direction:column;gap:4px;min-width:0}
 .dprange .label{margin-top:4px}
 .dphint{display:flex;align-items:center;height:40px;margin:0 auto}
+.dpstrip{cursor:grab}
+.dpstrip.dragging{cursor:grabbing;scroll-snap-type:none;user-select:none}
+.dpstrip.dragging .dpi{pointer-events:none}
