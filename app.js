@@ -163,6 +163,72 @@ function hebNum(n) {
   return (h[Math.floor(n / 100)] + t[Math.floor(n % 100 / 10)] + u[n % 10]).replace('יה', 'טו').replace('יו', 'טז');
 }
 function dafNum(a) { return Math.floor(a / 2) + 2; }
+/* ===== the page picker: swipe the chapters sideways, the one in the middle is chosen; under it, the pages of that chapter.
+   dpHtml(id, daf, o) writes it, dpBind(id, o) brings it to life. o: { lo, hi } pages allowed, edge: 'first' | 'last' (the page
+   a chapter starts at when it is chosen: its first page for "מדף", its last for "עד דף"), skip: a label for an item before the
+   pages that chooses the chapter itself (the value is then its last page, and skipped is true), onChange(daf, skipped) */
+function pkPages(k) { const a0 = PEREKS[k][1], a1 = k + 1 < PEREKS.length ? PEREKS[k + 1][1] - 1 : 313; return [dafNum(a0), dafNum(a1)]; }
+function dpPereks(o) { const out = []; PEREKS.forEach((pk, k) => { const [f, l] = pkPages(k); if (l >= o.lo && f <= o.hi) out.push(k); }); return out; }
+function dpPkOf(daf, o, pref) { const ks = dpPereks(o); if (pref !== undefined && ks.indexOf(pref) >= 0) { const [f, l] = pkPages(pref); if (daf >= f && daf <= l) return pref; } return ks.find(k => { const [f, l] = pkPages(k); return daf >= f && daf <= l; }) ?? ks[0]; }
+function dpPagesHtml(k, daf, o, skipped) {
+  const [f, l] = pkPages(k), a = Math.max(f, o.lo), b = Math.min(l, o.hi); let h = '';
+  if (o.skip) h += '<button class="dpi skip" data-v="skip" aria-pressed="' + !!skipped + '">' + o.skip + '</button>';
+  for (let d = a; d <= b; d++) h += '<button class="dpi" data-v="' + d + '" aria-pressed="' + (!skipped && d === daf) + '" aria-label="דף ' + hebNum(d) + '">' + hebNum(d) + '</button>';
+  return h;
+}
+function dpHtml(id, daf, o) {
+  const k = dpPkOf(daf, o, o.pk); if (o.skip && o.skipped) daf = Math.min(pkPages(k)[1], o.hi);
+  /* o.none: nothing chosen yet (the first opening, before a swipe or a tap) */
+  return '<div class="dpick' + (o.none ? ' none' : '') + '" id="' + id + '" data-pk="' + k + '" data-v="' + daf + '"' + (o.skipped ? ' data-skip="1"' : '') + '>' +
+    '<div class="dpstrip" data-r="pk" role="listbox" aria-label="פרק">' + dpPereks(o).map(j => '<button class="dpi pk" data-v="' + j + '" aria-pressed="' + (!o.none && j === k) + '">' + ordPk(j) + '. ' + esc(PEREKS[j][0]) + '</button>').join('') + '</div>' +
+    '<div class="dpstrip" data-r="d" role="listbox" aria-label="דף">' + (o.none ? '<span class="dphint small muted">בחרו פרק</span>' : dpPagesHtml(k, daf, o, o.skipped)) + '</div></div>';
+}
+function dpBind(id, o) {
+  const box = $(id); if (!box) return null;
+  const strips = { pk: box.querySelector('[data-r=pk]'), d: box.querySelector('[data-r=d]') };
+  let quiet = 0;
+  const centre = (strip, smooth) => { const on = strip.querySelector('[aria-pressed=true]'); if (!on) return; quiet = Date.now() + (smooth ? 700 : 250); on.scrollIntoView({ inline: 'center', block: 'nearest', behavior: smooth ? 'smooth' : 'auto' }); };
+  const mark = (strip, el) => strip.querySelectorAll('.dpi').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
+  const emit = () => { if (o.onChange) o.onChange(+box.dataset.v, box.dataset.skip === '1'); };
+  const choosePage = (el, smooth) => {
+    mark(strips.d, el);
+    if (el.dataset.v === 'skip') { box.dataset.skip = '1'; box.dataset.v = String(Math.min(pkPages(+box.dataset.pk)[1], o.hi)); }
+    else { delete box.dataset.skip; box.dataset.v = el.dataset.v; }
+    if (smooth) centre(strips.d, true); emit();
+  };
+  const choosePk = (k, smooth) => {
+    box.classList.remove('none'); box.dataset.pk = String(k); mark(strips.pk, strips.pk.querySelector('[data-v="' + k + '"]'));
+    const [f, l] = pkPages(k), d = o.edge === 'first' ? Math.max(f, o.lo) : Math.min(l, o.hi);
+    const skip = !!o.skip; strips.d.innerHTML = dpPagesHtml(k, d, o, skip);
+    box.dataset.v = String(d); if (skip) box.dataset.skip = '1'; else delete box.dataset.skip;
+    if (smooth) centre(strips.pk, true); centre(strips.d, false); emit();
+  };
+  /* the item nearest the middle of a strip, once the finger has let go and the strip has stopped */
+  const nearest = strip => { const r = strip.getBoundingClientRect(), mid = r.left + r.width / 2; let best = null, bd = 1e9;
+    strip.querySelectorAll('.dpi').forEach(b => { const q = b.getBoundingClientRect(), dd = Math.abs(q.left + q.width / 2 - mid); if (dd < bd) { bd = dd; best = b; } }); return best; };
+  Object.keys(strips).forEach(r => {
+    const strip = strips[r]; let t = 0, touched = false;
+    /* while nothing is chosen, only a finger, the mouse or the wheel chooses (a scroll the page makes by itself does not) */
+    ['pointerdown', 'touchstart', 'wheel', 'keydown'].forEach(ev => strip.addEventListener(ev, () => { touched = true; }, { passive: true }));
+    const settle = () => { if (Date.now() < quiet || !box.isConnected || (box.classList.contains('none') && !touched)) return; const b = nearest(strip); if (!b || (b.getAttribute('aria-pressed') === 'true' && !box.classList.contains('none'))) return;
+      if (r === 'pk') choosePk(+b.dataset.v, false); else choosePage(b, false); };
+    strip.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(settle, 160); }, { passive: true });
+    strip.addEventListener('click', ev => { const b = ev.target.closest('.dpi'); if (!b) return;
+      if (r === 'pk') { if (+b.dataset.v !== +box.dataset.pk || box.classList.contains('none')) choosePk(+b.dataset.v, true); else centre(strip, true); } else choosePage(b, true); });
+  });
+  centre(strips.pk, false); centre(strips.d, false);
+  return { set: daf => { const k = dpPkOf(daf, o, +box.dataset.pk); if (k !== +box.dataset.pk) { box.dataset.pk = String(k); mark(strips.pk, strips.pk.querySelector('[data-v="' + k + '"]')); }
+    strips.d.innerHTML = dpPagesHtml(k, daf, o, false); delete box.dataset.skip; box.dataset.v = String(daf); centre(strips.pk, false); centre(strips.d, false); } };
+}
+/* a range of pages, "מדף" and "עד דף", each with its own picker; the two keep from <= to */
+function dpRangeHtml(p, d0, d1, lo, hi) {
+  return '<div class="dprange"><span class="label small">מדף</span>' + dpHtml(p + '-d0', d0, { lo, hi }) + '<span class="label small">עד דף</span>' + dpHtml(p + '-d1', d1, { lo, hi }) + '</div>';
+}
+function dpRangeBind(p, st, lo, hi, after) {
+  let a = null, b = null;
+  a = dpBind(p + '-d0', { lo, hi, edge: 'first', onChange: d => { st.d0 = d; if (st.d1 < d) { st.d1 = d; if (b) b.set(d); } after(); } });
+  b = dpBind(p + '-d1', { lo, hi, edge: 'last', onChange: d => { st.d1 = d; if (st.d0 > d) { st.d0 = d; if (a) a.set(d); } after(); } });
+}
 function dafName(a) { return 'דף ' + hebNum(dafNum(a)) + (a % 2 ? ' ע"ב' : ' ע"א'); }
 function dafShort(a) { return hebNum(dafNum(a)) + (a % 2 ? ':' : '.'); }
 function ordPk(k) { return ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י', 'יא', 'יב', 'יג', 'יד', 'טו', 'טז', 'יז', 'יח', 'יט', 'כ', 'כא', 'כב', 'כג', 'כד'][k] || ''; }
@@ -399,10 +465,7 @@ function scopeHtml(noKind, compact) {
       PEREKS.map((pk, k) => { const n = pkCount(k); return '<button class="chip" data-v="' + k + '" aria-pressed="' + (SC.pereks.indexOf(k) >= 0) + '"' + (n ? '' : ' disabled') + '>' + ordPk(k) + '. ' + esc(pk[0]) + ' (' + n + ')</button>'; }).join('') + '</div>' +
       '<p class="small muted">אפשר לסמן כמה פרקים יחד, למשל את הפרקים שכבר למדת.</p>';
   } else if (SC.by === 'daf') {
-    const opts = sel => { let h = ''; for (let n = 2; n <= 157; n++) h += '<option value="' + n + '"' + (sel === n ? ' selected' : '') + '>דף ' + hebNum(n) + '</option>'; return h; };
-    sub = '<div class="two"><div class="field"><label for="sc-d0">מדף</label><select id="sc-d0">' + opts(SC.d0) + '</select></div>' +
-      '<div class="field"><label for="sc-d1">עד דף</label><select id="sc-d1">' + opts(SC.d1) + '</select></div></div>' +
-      '<p class="small muted">לדף אחד בוחרים אותו דף בשני השדות.</p>';
+    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157) + '<p class="small muted">מחליקים את הפרקים ואת הדפים באצבע, או לוחצים. לדף אחד בוחרים אותו דף פעמיים.</p>';
   } else if (SC.by === 'topic') {
     sub = '<select id="sc-topic" aria-label="נושא"><option value="-1">כל הנושאים (' + CN.length + ')</option>' +
       TOPICS.map((t, k) => '<option value="' + k + '"' + (SC.topic === k ? ' selected' : '') + '>' + esc(t) + ' (' + CN.filter(c => c.t === k).length + ')</option>').join('') + '</select>';
@@ -428,9 +491,10 @@ function bindScope(again) {
     else { const at = SC.pereks.indexOf(k); if (at >= 0) SC.pereks.splice(at, 1); else SC.pereks.push(k); SC.pereks.sort((x, y) => x - y); }
     done();
   }; });
-  const d0 = $('sc-d0'), d1 = $('sc-d1'), tp = $('sc-topic');
-  if (d0) d0.onchange = () => { SC.d0 = +d0.value; if (SC.d1 < SC.d0) SC.d1 = SC.d0; done(); };
-  if (d1) d1.onchange = () => { SC.d1 = +d1.value; if (SC.d0 > SC.d1) SC.d0 = SC.d1; done(); };
+  const tp = $('sc-topic');
+  /* the pickers change the range without drawing the choice again (that would stop a strip under the finger): only the count follows */
+  dpRangeBind('sc', SC, 2, 157, () => { saveSc(); const items = scopeItems(), c = $('sc-count');
+    if (c) c.textContent = countLabel(items) + (c.classList.contains('qcount') ? '' : '.'); const q = $('qstart'); if (q && R.tab === 'quiz') q.disabled = !quizItems().length; });
   if (tp) tp.onchange = () => { SC.topic = +tp.value; done(); };
 }
 /* on the learning screen the choice sits behind one line that says what is being practised */
@@ -1269,15 +1333,13 @@ function bindMode() {
 function renderTQSetup() {
   TQ.level = -1;   /* no levels: questions of every level */
   const items = tqItems(), n = items.length, b = S.best.tquiz, inLevel = CT.filter(x => TQ.level < 0 || x.lv === TQ.level);
-  const opts = sel => { let h = ''; for (let d = CT_D0; d <= CT_D1; d++) h += '<option value="' + d + '"' + (sel === d ? ' selected' : '') + '>דף ' + hebNum(d) + '</option>'; return h; };
   let sub = '';
   if (TQ.by === 'perek') sub = '<div class="pkpick" id="tq-pk"><button class="chip" data-v="-1" aria-pressed="' + (TQ.pereks.length === 0) + '">כל הפרקים</button>' +
     PEREKS.map((pk, k) => { const c = inLevel.filter(x => x.pk === k).length; return '<button class="chip" data-v="' + k + '" aria-pressed="' + (TQ.pereks.indexOf(k) >= 0) + '"' + (c ? '' : ' disabled') + '>' + ordPk(k) + '. ' + esc(pk[0]) + ' (' + c + ')</button>'; }).join('') + '</div>' +
     '<p class="small muted">אפשר לסמן פרק אחד או כמה פרקים. הפרקים מסודרים לפי סדר המסכת.</p>';
   else if (TQ.by === 'topic') sub = '<select id="tq-topic" aria-label="נושא הסוגיה"><option value="-1">כל הנושאים (' + inLevel.length + ')</option>' +
     PEREKS.map((pk, k) => { const ts = CTOPICS.map((t, j) => t.pk === k ? '<option value="' + j + '"' + (TQ.topic === j ? ' selected' : '') + '>' + esc(t.n) + ' (' + inLevel.filter(x => x.t === j).length + ')</option>' : '').join(''); return ts ? '<optgroup label="' + esc(ordPk(k) + '. ' + pk[0]) + '">' + ts + '</optgroup>' : ''; }).join('') + '</select>';
-  else if (TQ.by === 'daf') sub = '<div class="two"><div class="field"><label for="tq-d0">מדף</label><select id="tq-d0">' + opts(TQ.d0) + '</select></div>' +
-    '<div class="field"><label for="tq-d1">עד דף</label><select id="tq-d1">' + opts(TQ.d1) + '</select></div></div>';
+  else if (TQ.by === 'daf') sub = dpRangeHtml('tq', TQ.d0, TQ.d1, CT_D0, CT_D1);
   view.innerHTML = '<div class="qsetup"><h2>חידון אמריקאי</h2>' + modeSeg() +
     qCard('אילו סוגיות', '<p class="small muted">שאלות על מהלך הסוגיות: מה נאמר, מי סובר מה, ומה הטעם, מדף ' + hebNum(CT_D0) + ' עד דף ' + hebNum(CT_D1) + '.</p>' +
       '<div class="seg grid2 qby" id="tq-by"><button data-v="all" aria-pressed="' + (TQ.by === 'all') + '">הכול</button>' +
@@ -1297,10 +1359,9 @@ function renderTQSetup() {
     else { const at = TQ.pereks.indexOf(k); if (at >= 0) TQ.pereks.splice(at, 1); else TQ.pereks.push(k); TQ.pereks.sort((x, y) => x - y); }
     done();
   }; });
-  const tp = $('tq-topic'), d0 = $('tq-d0'), d1 = $('tq-d1');
+  const tp = $('tq-topic');
   if (tp) tp.onchange = () => { TQ.topic = +tp.value; done(); };
-  if (d0) d0.onchange = () => { TQ.d0 = +d0.value; if (TQ.d1 < TQ.d0) TQ.d1 = TQ.d0; done(); };
-  if (d1) d1.onchange = () => { TQ.d1 = +d1.value; if (TQ.d0 > TQ.d1) TQ.d0 = TQ.d1; done(); };
+  dpRangeBind('tq', TQ, CT_D0, CT_D1, () => { saveTq(); const n2 = tqItems().length, c = $('tq-count'); if (c) c.textContent = n2 ? nQuestions(n2) : 'אין שאלות בבחירה הזו'; $('qstart').disabled = !n2; });
   const len = quizCfg.len;
   const go = () => {
     const src = tqItems(); if (!src.length) { toast('אין שאלות בבחירה הזו'); return; }
@@ -2764,7 +2825,7 @@ function bindBetaLab() {
 }
 /* the first opening, for a new learner with nothing known yet: where they hold in the lesson, and how many of the most
    frequent words they already know. The words of the level chosen are shown as tags, all marked; a tap leaves one out */
-const welcome = { lvl: 0, off: new Set() };
+const welcome = { lvl: 0, off: new Set(), daf: 0, skip: true, pk: undefined };
 const WLEVELS = [[0, 'מתחיל'], [30, 'יסודות'], [80, 'בינוני'], [150, 'מתקדם']];
 function topWords(n) { return D.filter(e => !e.ext).sort((x, y) => y.c - x.c).slice(0, n); }
 function openWelcome(step) {
@@ -2776,10 +2837,11 @@ function openWelcome(step) {
       '<p class="muted">כמה דקות ביום מספיקות. האפליקציה זוכרת מה למדת ומחזירה כל מילה בדיוק כשצריך לחזור עליה.</p>';
     foot = '<button class="btn wide" id="o-next">הבא</button>';
   } else if (step === 1) {
-    const opts = []; for (let d = 2; d <= 157; d++) opts.push('<option value="' + d + '"' + (SC.by === 'daf' && SC.d1 === d ? ' selected' : '') + '>דף ' + hebNum(d) + '</option>');
+    const at = welcome.daf || (SC.by === 'daf' ? SC.d1 : 2);
     body = '<div class="hero">באיזה דף אתם אוחזים בשיעור?</div>' +
-      '<label for="o-daf">הלימוד והחידון יתמקדו במה שלמדתם עד הדף הזה</label><select id="o-daf"><option value="">בחרו דף</option>' + opts.join('') + '</select>' +
-      '<p class="small muted">אפשר לשנות בכל רגע ב"מה מתרגלים" במסך הלימוד.</p>';
+      '<p class="small">מחליקים באצבע או לוחצים: קודם הפרק, ואחר כך הדף. מי שלא בטוח באיזה דף, בוחר "דלג", והלימוד יגיע עד סוף הפרק.</p>' +
+      dpHtml('o-dp', at, { lo: 2, hi: 157, skip: 'דלג', skipped: welcome.skip, pk: welcome.pk, none: !welcome.daf }) +
+      '<p class="small muted" id="o-dpnote"></p><p class="small muted">הלימוד והחידון יתמקדו במה שלמדתם עד שם. אפשר לשנות בכל רגע ב"מה מתרגלים".</p>';
     foot = '<div class="two"><button class="btn ghost" id="o-skip">כל המסכת</button><button class="btn" id="o-next">המשך</button></div>';
   } else {
     const n = WLEVELS[welcome.lvl][0], ws = topWords(n);
@@ -2797,10 +2859,16 @@ function openWelcome(step) {
     S.onboarded = true; save(); closeSheet(); render();
   };
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  if (step === 1) {
+    const note = () => { const v = welcome.daf, k = welcome.pk ?? dpPkOf(v || 2, { lo: 2, hi: 157 });
+      $('o-dpnote').textContent = !v ? 'עוד לא בחרתם. בלי בחירה, הלימוד יכלול את כל המסכת.' : welcome.skip ? 'עד סוף פרק ' + PEREKS[k][0] + ' (דף ' + hebNum(v) + ')' : 'עד דף ' + hebNum(v) + ', בפרק ' + PEREKS[k][0]; };
+    dpBind('o-dp', { lo: 2, hi: 157, edge: 'last', skip: 'דלג', onChange: (d, sk) => { const bx = $('o-dp'); if (!bx) return; welcome.daf = d; welcome.skip = sk; welcome.pk = +bx.dataset.pk; note(); } });
+    note();
+  }
   on('o-prev', () => openWelcome(step - 1));
   on('o-skip', () => { if (SC.by === 'daf') { SC.by = 'all'; saveSc(); } openWelcome(2); });
   on('o-next', () => {
-    if (step === 1) { const v = +$('o-daf').value; if (v) { SC.by = 'daf'; SC.d0 = 2; SC.d1 = v; saveSc(); } }
+    if (step === 1) { if (welcome.daf) { SC.by = 'daf'; SC.d0 = 2; SC.d1 = welcome.daf; } else if (SC.by === 'daf') SC.by = 'all'; saveSc(); }
     if (step < 2) openWelcome(step + 1); else done();
   });
   bindSeg('o-lvl', v => { welcome.lvl = +v; welcome.off.clear(); openWelcome(2); });
