@@ -619,11 +619,14 @@ function turnTo(tab) {
   let x0 = 0, y0 = 0, t0 = 0, dx = 0, active = false, tracking = false, blockClick = 0, target = null;
   const edge = 28;
   railWrap.addEventListener('touchstart', ev => {
+    /* a swipe that never ended (the browser took the touch over) must not leave the rail between two screens */
+    if (active) place(R.tab, false);
     tracking = false; active = false; dx = 0;
     if (R.sub || sheetOpen || ev.touches.length !== 1 || TABS.indexOf(R.tab) < 0) return;
     const t = ev.touches[0];
     if (t.clientX < edge || t.clientX > window.innerWidth - edge) return; /* leave the system back gesture alone */
-    if (ev.target.closest && ev.target.closest('.chips, input, textarea, select')) return;
+    /* strips that scroll sideways themselves (the page picker) keep the swipe to themselves */
+    if (ev.target.closest && ev.target.closest('.chips, .dpstrip, input, textarea, select')) return;
     x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); tracking = true;
   }, { passive: true });
   railWrap.addEventListener('touchmove', ev => {
