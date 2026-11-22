@@ -182,15 +182,15 @@ function dpHtml(id, daf, o) {
   const k = dpPkOf(daf, o, o.pk); if (o.skip && o.skipped) daf = Math.min(pkPages(k)[1], o.hi);
   /* o.none: nothing chosen yet (the first opening, before a swipe or a tap) */
   return '<div class="dpick' + (o.none ? ' none' : '') + '" id="' + id + '" data-pk="' + k + '" data-v="' + daf + '"' + (o.skipped ? ' data-skip="1"' : '') + '>' +
-    '<div class="dpcol"><span class="dplab">פרק</span><div class="dpstrip" data-r="pk" role="listbox" aria-label="פרק">' + dpPereks(o).map(j => '<button class="dpi pk" data-v="' + j + '" aria-pressed="' + (!o.none && j === k) + '">' + ordPk(j) + '. ' + esc(PEREKS[j][0]) + '</button>').join('') + '</div></div>' +
-    '<div class="dpcol"><span class="dplab">דף</span><div class="dpstrip" data-r="d" role="listbox" aria-label="דף">' + (o.none ? '<span class="dphint small muted">בחרו פרק</span>' : dpPagesHtml(k, daf, o, o.skipped)) + '</div></div></div>';
+    '<div class="dpcol"><span class="dplab">פרק</span><div class="dpwin"><div class="dpstrip" data-r="pk" role="listbox" aria-label="פרק">' + dpPereks(o).map(j => '<button class="dpi pk" data-v="' + j + '" aria-pressed="' + (!o.none && j === k) + '">' + ordPk(j) + '. ' + esc(PEREKS[j][0]) + '</button>').join('') + '</div></div></div>' +
+    '<div class="dpcol"><span class="dplab">דף</span><div class="dpwin"><div class="dpstrip" data-r="d" role="listbox" aria-label="דף">' + (o.none ? '<span class="dphint small muted">בחרו פרק</span>' : dpPagesHtml(k, daf, o, o.skipped)) + '</div></div></div></div>';
 }
 function dpBind(id, o) {
   const box = $(id); if (!box) return null;
   const strips = { pk: box.querySelector('[data-r=pk]'), d: box.querySelector('[data-r=d]') };
-  let quiet = 0;
+  const quiet = { pk: 0, d: 0 };   /* per wheel: a scroll this code makes itself is not a choice */
   /* only the wheel scrolls: scrollIntoView would also scroll the frame of the screens (overflow hidden is still scrollable) */
-  const centre = (strip, smooth) => { const on = strip.querySelector('[aria-pressed=true]'); if (!on) return; quiet = Date.now() + (smooth ? 700 : 250);
+  const centre = (strip, smooth) => { const on = strip.querySelector('[aria-pressed=true]'); if (!on) return; quiet[strip.dataset.r] = Date.now() + (smooth ? 700 : 250);
     strip.scrollTo({ top: on.offsetTop - (strip.clientHeight - on.offsetHeight) / 2, behavior: smooth ? 'smooth' : 'auto' }); };
   const mark = (strip, el) => strip.querySelectorAll('.dpi').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
   const emit = () => { if (o.onChange) o.onChange(+box.dataset.v, box.dataset.skip === '1'); };
@@ -214,9 +214,11 @@ function dpBind(id, o) {
     const strip = strips[r]; let t = 0, touched = false;
     /* while nothing is chosen, only a finger, the mouse or the wheel chooses (a scroll the page makes by itself does not) */
     ['pointerdown', 'touchstart', 'wheel', 'keydown'].forEach(ev => strip.addEventListener(ev, () => { touched = true; }, { passive: true }));
-    const settle = () => { if (drag || Date.now() < quiet || !box.isConnected || (box.classList.contains('none') && !touched)) return; const b = nearest(strip); if (!b || (b.getAttribute('aria-pressed') === 'true' && !box.classList.contains('none'))) return;
+    const settle = () => { if ((drag && !dragged) || Date.now() < quiet[r] || !box.isConnected || (box.classList.contains('none') && !touched)) return; const b = nearest(strip); if (!b || (b.getAttribute('aria-pressed') === 'true' && !box.classList.contains('none'))) return;
       if (r === 'pk') choosePk(+b.dataset.v, false); else choosePage(b, false); };
-    strip.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(settle, 160); }, { passive: true });
+    let raf = 0;
+    const live = () => { raf = 0; if (drag && !dragged) return; settle(); };
+    strip.addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(live); clearTimeout(t); t = setTimeout(settle, 160); }, { passive: true });
     /* a mouse drags the wheel too (a finger, a trackpad and the wheel of the mouse scroll it by themselves); a drag is not a click */
     let drag = null, dragged = false;
     strip.addEventListener('pointerdown', ev => { if (ev.pointerType !== 'mouse' || ev.button !== 0) return;
@@ -234,14 +236,31 @@ function dpBind(id, o) {
   return { set: daf => { const k = dpPkOf(daf, o, +box.dataset.pk); if (k !== +box.dataset.pk) { box.dataset.pk = String(k); mark(strips.pk, strips.pk.querySelector('[data-v="' + k + '"]')); }
     strips.d.innerHTML = dpPagesHtml(k, daf, o, false); delete box.dataset.skip; box.dataset.v = String(daf); centre(strips.pk, false); centre(strips.d, false); } };
 }
-/* a range of pages, "מדף" and "עד דף", each with its own picker; the two keep from <= to */
-function dpRangeHtml(p, d0, d1, lo, hi) {
-  return '<div class="dprange"><span class="label small">מדף</span>' + dpHtml(p + '-d0', d0, { lo, hi }) + '<span class="label small">עד דף</span>' + dpHtml(p + '-d1', d1, { lo, hi }) + '</div>';
+/* a range of pages, one step at a time: "מדף" with its wheels and "הבא", then "עד דף", whose wheels start at the same page
+   and cannot go before it; a line on top of the second step goes back to change "מדף". Which step shows is kept per picker */
+const DPSTEP = {};
+function dpRangeInner(p, st, lo, hi) {
+  if (DPSTEP[p] !== 'to') return '<div class="dpstep"><b>מדף</b><span class="small muted">שלב 1 מתוך 2</span></div>' + dpHtml(p + '-d0', st.d0, { lo, hi }) +
+    '<button class="btn line wide" id="' + p + '-next">הבא: עד דף</button>';
+  const k = dpPkOf(st.d0, { lo, hi });
+  return '<button class="dpback" id="' + p + '-back"><span>מדף ' + hebNum(st.d0) + ', ' + esc(PEREKS[k][0]) + '</span><span class="dpchg">שינוי</span></button>' +
+    '<div class="dpstep"><b>עד דף</b><span class="small muted">שלב 2 מתוך 2</span></div>' + dpHtml(p + '-d1', Math.max(st.d1, st.d0), { lo: st.d0, hi }) +
+    '<p class="small muted dpone">לדף אחד בלבד, משאירים את אותו דף.</p>';
 }
+function dpRangeHtml(p, d0, d1, lo, hi) { return '<div class="dprange" id="' + p + '-range">' + dpRangeInner(p, { d0, d1 }, lo, hi) + '</div>'; }
 function dpRangeBind(p, st, lo, hi, after) {
-  let a = null, b = null;
-  a = dpBind(p + '-d0', { lo, hi, edge: 'first', onChange: d => { st.d0 = d; if (st.d1 < d) { st.d1 = d; if (b) b.set(d); } after(); } });
-  b = dpBind(p + '-d1', { lo, hi, edge: 'last', onChange: d => { st.d1 = d; if (st.d0 > d) { st.d0 = d; if (a) a.set(d); } after(); } });
+  const box = $(p + '-range'); if (!box) return;
+  const draw = () => { box.innerHTML = dpRangeInner(p, st, lo, hi); bind(); };
+  function bind() {
+    if (DPSTEP[p] !== 'to') {
+      dpBind(p + '-d0', { lo, hi, edge: 'first', onChange: d => { st.d0 = d; if (st.d1 < d) st.d1 = d; after(); } });
+      $(p + '-next').onclick = () => { st.d1 = st.d0; DPSTEP[p] = 'to'; draw(); after(); };
+    } else {
+      dpBind(p + '-d1', { lo: st.d0, hi, edge: 'first', onChange: d => { st.d1 = d; after(); } });
+      $(p + '-back').onclick = () => { DPSTEP[p] = 'from'; draw(); };
+    }
+  }
+  bind();
 }
 function dafName(a) { return 'דף ' + hebNum(dafNum(a)) + (a % 2 ? ' ע"ב' : ' ע"א'); }
 function dafShort(a) { return hebNum(dafNum(a)) + (a % 2 ? ':' : '.'); }
@@ -479,7 +498,7 @@ function scopeHtml(noKind, compact) {
       PEREKS.map((pk, k) => { const n = pkCount(k); return '<button class="chip" data-v="' + k + '" aria-pressed="' + (SC.pereks.indexOf(k) >= 0) + '"' + (n ? '' : ' disabled') + '>' + ordPk(k) + '. ' + esc(pk[0]) + ' (' + n + ')</button>'; }).join('') + '</div>' +
       '<p class="small muted">אפשר לסמן כמה פרקים יחד, למשל את הפרקים שכבר למדת.</p>';
   } else if (SC.by === 'daf') {
-    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157) + '<p class="small muted">מגלגלים את הפרקים ואת הדפים למעלה ולמטה, או לוחצים. לדף אחד בוחרים אותו דף פעמיים.</p>';
+    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157) + '<p class="small muted">מגלגלים את הפרק ואת הדף למעלה ולמטה, או לוחצים.</p>';
   } else if (SC.by === 'topic') {
     sub = '<select id="sc-topic" aria-label="נושא"><option value="-1">כל הנושאים (' + CN.length + ')</option>' +
       TOPICS.map((t, k) => '<option value="' + k + '"' + (SC.topic === k ? ' selected' : '') + '>' + esc(t) + ' (' + CN.filter(c => c.t === k).length + ')</option>').join('') + '</select>';

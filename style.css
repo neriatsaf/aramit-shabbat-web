@@ -435,18 +435,27 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .dpick{display:grid;grid-template-columns:minmax(0,1fr) 88px;gap:8px;min-width:0}
 .dpcol{display:flex;flex-direction:column;gap:4px;min-width:0}
 .dplab{font-size:.75rem;color:var(--muted);text-align:center}
+.dpwin{position:relative;border-radius:12px;background:var(--soft);overflow:hidden}
+/* the band in the middle stays still; the items turn through it */
+.dpwin::before{content:'';position:absolute;left:4px;right:4px;top:72px;height:36px;border-radius:10px;background:var(--brand);pointer-events:none}
 .dpstrip{position:relative;height:180px;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y mandatory;overscroll-behavior:contain;
-  display:flex;flex-direction:column;padding:72px 4px;border-radius:12px;background:var(--soft);scrollbar-width:none;
+  display:flex;flex-direction:column;padding:72px 4px;scrollbar-width:none;
   -webkit-mask-image:linear-gradient(to bottom,transparent,#000 30%,#000 70%,transparent);mask-image:linear-gradient(to bottom,transparent,#000 30%,#000 70%,transparent)}
 .dpstrip::-webkit-scrollbar{display:none}
 .dpi{flex:0 0 36px;height:36px;width:100%;scroll-snap-align:center;padding:0 8px;border:0;border-radius:10px;background:transparent;color:var(--ink);
-  font:inherit;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s,color .15s}
+  font:inherit;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dpi.pk{font-size:.9rem;text-align:right}
 .dpi.skip{font-size:.85rem;color:var(--muted)}
-.dpi[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink);font-weight:700}
+.dpi[aria-pressed="true"]{color:var(--brand-ink);font-weight:700}
 .dprange{display:flex;flex-direction:column;gap:4px;min-width:0}
 .dprange .label{margin-top:4px}
 .dphint{display:flex;align-items:center;justify-content:center;height:36px;flex:0 0 36px}
 .dpstrip{cursor:grab}
 .dpstrip.dragging{cursor:grabbing;scroll-snap-type:none;user-select:none}
 .dpstrip.dragging .dpi{pointer-events:none}
+.dpstep{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.dpstep b{font-size:.95rem}
+.dpback{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;font-size:.9rem;text-align:right}
+.dpback .dpchg{color:var(--brand);font-weight:700;white-space:nowrap}
+.dprange .dpone{margin:0}
+.dprange .btn{margin-top:2px}
