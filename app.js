@@ -163,7 +163,9 @@ function hebNum(n) {
   return (h[Math.floor(n / 100)] + t[Math.floor(n % 100 / 10)] + u[n % 10]).replace('יה', 'טו').replace('יו', 'טז');
 }
 function dafNum(a) { return Math.floor(a / 2) + 2; }
-/* ===== the page picker: swipe the chapters sideways, the one in the middle is chosen; under it, the pages of that chapter.
+/* ===== the page picker: two wheels side by side, swiped up and down: the chapters on the right, the pages of the chosen
+   chapter on the left; the item in the band in the middle is the one chosen. Each wheel scrolls only itself (scrollTop):
+   nothing here may scroll the screens around it.
    dpHtml(id, daf, o) writes it, dpBind(id, o) brings it to life. o: { lo, hi } pages allowed, edge: 'first' | 'last' (the page
    a chapter starts at when it is chosen: its first page for "מדף", its last for "עד דף"), skip: a label for an item before the
    pages that chooses the chapter itself (the value is then its last page, and skipped is true), onChange(daf, skipped) */
@@ -180,14 +182,16 @@ function dpHtml(id, daf, o) {
   const k = dpPkOf(daf, o, o.pk); if (o.skip && o.skipped) daf = Math.min(pkPages(k)[1], o.hi);
   /* o.none: nothing chosen yet (the first opening, before a swipe or a tap) */
   return '<div class="dpick' + (o.none ? ' none' : '') + '" id="' + id + '" data-pk="' + k + '" data-v="' + daf + '"' + (o.skipped ? ' data-skip="1"' : '') + '>' +
-    '<div class="dpstrip" data-r="pk" role="listbox" aria-label="פרק">' + dpPereks(o).map(j => '<button class="dpi pk" data-v="' + j + '" aria-pressed="' + (!o.none && j === k) + '">' + ordPk(j) + '. ' + esc(PEREKS[j][0]) + '</button>').join('') + '</div>' +
-    '<div class="dpstrip" data-r="d" role="listbox" aria-label="דף">' + (o.none ? '<span class="dphint small muted">בחרו פרק</span>' : dpPagesHtml(k, daf, o, o.skipped)) + '</div></div>';
+    '<div class="dpcol"><span class="dplab">פרק</span><div class="dpstrip" data-r="pk" role="listbox" aria-label="פרק">' + dpPereks(o).map(j => '<button class="dpi pk" data-v="' + j + '" aria-pressed="' + (!o.none && j === k) + '">' + ordPk(j) + '. ' + esc(PEREKS[j][0]) + '</button>').join('') + '</div></div>' +
+    '<div class="dpcol"><span class="dplab">דף</span><div class="dpstrip" data-r="d" role="listbox" aria-label="דף">' + (o.none ? '<span class="dphint small muted">בחרו פרק</span>' : dpPagesHtml(k, daf, o, o.skipped)) + '</div></div></div>';
 }
 function dpBind(id, o) {
   const box = $(id); if (!box) return null;
   const strips = { pk: box.querySelector('[data-r=pk]'), d: box.querySelector('[data-r=d]') };
   let quiet = 0;
-  const centre = (strip, smooth) => { const on = strip.querySelector('[aria-pressed=true]'); if (!on) return; quiet = Date.now() + (smooth ? 700 : 250); on.scrollIntoView({ inline: 'center', block: 'nearest', behavior: smooth ? 'smooth' : 'auto' }); };
+  /* only the wheel scrolls: scrollIntoView would also scroll the frame of the screens (overflow hidden is still scrollable) */
+  const centre = (strip, smooth) => { const on = strip.querySelector('[aria-pressed=true]'); if (!on) return; quiet = Date.now() + (smooth ? 700 : 250);
+    strip.scrollTo({ top: on.offsetTop - (strip.clientHeight - on.offsetHeight) / 2, behavior: smooth ? 'smooth' : 'auto' }); };
   const mark = (strip, el) => strip.querySelectorAll('.dpi').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
   const emit = () => { if (o.onChange) o.onChange(+box.dataset.v, box.dataset.skip === '1'); };
   const choosePage = (el, smooth) => {
@@ -204,8 +208,8 @@ function dpBind(id, o) {
     if (smooth) centre(strips.pk, true); centre(strips.d, false); emit();
   };
   /* the item nearest the middle of a strip, once the finger has let go and the strip has stopped */
-  const nearest = strip => { const r = strip.getBoundingClientRect(), mid = r.left + r.width / 2; let best = null, bd = 1e9;
-    strip.querySelectorAll('.dpi').forEach(b => { const q = b.getBoundingClientRect(), dd = Math.abs(q.left + q.width / 2 - mid); if (dd < bd) { bd = dd; best = b; } }); return best; };
+  const nearest = strip => { const r = strip.getBoundingClientRect(), mid = r.top + r.height / 2; let best = null, bd = 1e9;
+    strip.querySelectorAll('.dpi').forEach(b => { const q = b.getBoundingClientRect(), dd = Math.abs(q.top + q.height / 2 - mid); if (dd < bd) { bd = dd; best = b; } }); return best; };
   Object.keys(strips).forEach(r => {
     const strip = strips[r]; let t = 0, touched = false;
     /* while nothing is chosen, only a finger, the mouse or the wheel chooses (a scroll the page makes by itself does not) */
@@ -213,13 +217,13 @@ function dpBind(id, o) {
     const settle = () => { if (drag || Date.now() < quiet || !box.isConnected || (box.classList.contains('none') && !touched)) return; const b = nearest(strip); if (!b || (b.getAttribute('aria-pressed') === 'true' && !box.classList.contains('none'))) return;
       if (r === 'pk') choosePk(+b.dataset.v, false); else choosePage(b, false); };
     strip.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(settle, 160); }, { passive: true });
-    /* a mouse drags the strip too (a finger and a trackpad scroll it by themselves); a drag is not a click */
+    /* a mouse drags the wheel too (a finger, a trackpad and the wheel of the mouse scroll it by themselves); a drag is not a click */
     let drag = null, dragged = false;
     strip.addEventListener('pointerdown', ev => { if (ev.pointerType !== 'mouse' || ev.button !== 0) return;
-      drag = { x: ev.clientX, left: strip.scrollLeft }; dragged = false; });
-    strip.addEventListener('pointermove', ev => { if (!drag) return; const dx = ev.clientX - drag.x;
-      if (!dragged && Math.abs(dx) > 4) { dragged = true; strip.classList.add('dragging'); try { strip.setPointerCapture(ev.pointerId); } catch (x) { /* gone */ } }
-      if (dragged) { strip.scrollLeft = drag.left - dx; ev.preventDefault(); } });
+      drag = { y: ev.clientY, top: strip.scrollTop }; dragged = false; });
+    strip.addEventListener('pointermove', ev => { if (!drag) return; const dy = ev.clientY - drag.y;
+      if (!dragged && Math.abs(dy) > 4) { dragged = true; strip.classList.add('dragging'); try { strip.setPointerCapture(ev.pointerId); } catch (x) { /* gone */ } }
+      if (dragged) { strip.scrollTop = drag.top - dy; ev.preventDefault(); } });
     const drop = () => { if (!drag) return; drag = null; if (dragged) { strip.classList.remove('dragging'); clearTimeout(t); t = setTimeout(settle, 60); } };
     strip.addEventListener('pointerup', drop); strip.addEventListener('pointercancel', drop); strip.addEventListener('lostpointercapture', drop);
     strip.addEventListener('click', ev => { if (dragged) { dragged = false; ev.preventDefault(); ev.stopPropagation(); return; }
@@ -475,7 +479,7 @@ function scopeHtml(noKind, compact) {
       PEREKS.map((pk, k) => { const n = pkCount(k); return '<button class="chip" data-v="' + k + '" aria-pressed="' + (SC.pereks.indexOf(k) >= 0) + '"' + (n ? '' : ' disabled') + '>' + ordPk(k) + '. ' + esc(pk[0]) + ' (' + n + ')</button>'; }).join('') + '</div>' +
       '<p class="small muted">אפשר לסמן כמה פרקים יחד, למשל את הפרקים שכבר למדת.</p>';
   } else if (SC.by === 'daf') {
-    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157) + '<p class="small muted">מחליקים את הפרקים ואת הדפים באצבע, או לוחצים. לדף אחד בוחרים אותו דף פעמיים.</p>';
+    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157) + '<p class="small muted">מגלגלים את הפרקים ואת הדפים למעלה ולמטה, או לוחצים. לדף אחד בוחרים אותו דף פעמיים.</p>';
   } else if (SC.by === 'topic') {
     sub = '<select id="sc-topic" aria-label="נושא"><option value="-1">כל הנושאים (' + CN.length + ')</option>' +
       TOPICS.map((t, k) => '<option value="' + k + '"' + (SC.topic === k ? ' selected' : '') + '>' + esc(t) + ' (' + CN.filter(c => c.t === k).length + ')</option>').join('') + '</select>';
@@ -602,6 +606,8 @@ function render(keep) {
    each panel turns back to right to left inside. While a finger drags, the rail follows it with no transition */
 const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const rail = document.getElementById('rail'), railWrap = document.getElementById('rail-wrap');
+/* the frame only clips the rail; if anything scrolls it (scrollIntoView, focus), put it back at once */
+railWrap.addEventListener('scroll', () => { if (railWrap.scrollLeft || railWrap.scrollTop) { railWrap.scrollLeft = 0; railWrap.scrollTop = 0; } });
 const EASE = 'transform 240ms cubic-bezier(0.22, 1, 0.36, 1)';
 let shownTab = null;
 function railAt(tab, px) { return 'translate3d(calc(' + (-RAIL.indexOf(tab) * 100 / RAIL.length) + '% + ' + (px || 0) + 'px),0,0)'; }
@@ -2852,7 +2858,7 @@ function openWelcome(step) {
   } else if (step === 1) {
     const at = welcome.daf || (SC.by === 'daf' ? SC.d1 : 2);
     body = '<div class="hero">באיזה דף אתם אוחזים בשיעור?</div>' +
-      '<p class="small">מחליקים באצבע או לוחצים: קודם הפרק, ואחר כך הדף. מי שלא בטוח באיזה דף, בוחר "דלג", והלימוד יגיע עד סוף הפרק.</p>' +
+      '<p class="small">מגלגלים למעלה ולמטה, או לוחצים: קודם הפרק (מימין), ואחר כך הדף. מי שלא בטוח באיזה דף, בוחר "דלג", והלימוד יגיע עד סוף הפרק.</p>' +
       dpHtml('o-dp', at, { lo: 2, hi: 157, skip: 'דלג', skipped: welcome.skip, pk: welcome.pk, none: !welcome.daf }) +
       '<p class="small muted" id="o-dpnote"></p><p class="small muted">הלימוד והחידון יתמקדו במה שלמדתם עד שם. אפשר לשנות בכל רגע ב"מה מתרגלים".</p>';
     foot = '<div class="two"><button class="btn ghost" id="o-skip">כל המסכת</button><button class="btn" id="o-next">המשך</button></div>';
