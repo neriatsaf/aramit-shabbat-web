@@ -236,31 +236,49 @@ function dpBind(id, o) {
   return { set: daf => { const k = dpPkOf(daf, o, +box.dataset.pk); if (k !== +box.dataset.pk) { box.dataset.pk = String(k); mark(strips.pk, strips.pk.querySelector('[data-v="' + k + '"]')); }
     strips.d.innerHTML = dpPagesHtml(k, daf, o, false); delete box.dataset.skip; box.dataset.v = String(daf); centre(strips.pk, false); centre(strips.d, false); } };
 }
-/* a range of pages, one step at a time: "מדף" with its wheels and "הבא", then "עד דף", whose wheels start at the same page
-   and cannot go before it; a line on top of the second step goes back to change "מדף". Which step shows is kept per picker */
-const DPSTEP = {};
-function dpRangeInner(p, st, lo, hi) {
-  if (DPSTEP[p] !== 'to') return '<div class="dpstep"><b>מדף</b><span class="small muted">שלב 1 מתוך 2</span></div>' + dpHtml(p + '-d0', st.d0, { lo, hi }) +
-    '<button class="btn line wide" id="' + p + '-next">הבא: עד דף</button>';
-  const k = dpPkOf(st.d0, { lo, hi });
-  return '<button class="dpback" id="' + p + '-back"><span>מדף ' + hebNum(st.d0) + ', ' + esc(PEREKS[k][0]) + '</span><span class="dpchg">שינוי</span></button>' +
-    '<div class="dpstep"><b>עד דף</b><span class="small muted">שלב 2 מתוך 2</span></div>' + dpHtml(p + '-d1', Math.max(st.d1, st.d0), { lo: st.d0, hi }) +
-    '<p class="small muted dpone">לדף אחד בלבד, משאירים את אותו דף.</p>';
+/* a range of pages: on the page, one line ("מדף ב, יציאות השבת / עד דף כ, יציאות השבת" and "שינוי"); a tap opens a window from
+   the bottom with the wheels, one step at a time: "מדף" and "הבא", then "עד דף", starting at the same page and unable to go
+   before it, with a line back to "מדף". The wheels live only in that window, so they never catch a scroll of the page.
+   Nothing changes until "סיום"; "ביטול" or a tap outside leaves the range as it was */
+function dpSumText(d0, d1, lo, hi) {
+  const pk = d => PEREKS[dpPkOf(d, { lo, hi })][0];
+  return d0 === d1 ? 'דף ' + hebNum(d0) + ' בלבד, ' + pk(d0) : 'מדף ' + hebNum(d0) + ', ' + pk(d0) + '<br>עד דף ' + hebNum(d1) + ', ' + pk(d1);
 }
-function dpRangeHtml(p, d0, d1, lo, hi) { return '<div class="dprange" id="' + p + '-range">' + dpRangeInner(p, { d0, d1 }, lo, hi) + '</div>'; }
+function dpRangeHtml(p, d0, d1, lo, hi) {
+  return '<button class="dpsum" id="' + p + '-sum" aria-label="בחירת דפים"><span id="' + p + '-sumt">' + dpSumText(d0, d1, lo, hi) + '</span><span class="dpchg">שינוי</span></button>';
+}
 function dpRangeBind(p, st, lo, hi, after) {
-  const box = $(p + '-range'); if (!box) return;
-  const draw = () => { box.innerHTML = dpRangeInner(p, st, lo, hi); bind(); };
-  function bind() {
-    if (DPSTEP[p] !== 'to') {
-      dpBind(p + '-d0', { lo, hi, edge: 'first', onChange: d => { st.d0 = d; if (st.d1 < d) st.d1 = d; after(); } });
-      $(p + '-next').onclick = () => { st.d1 = st.d0; DPSTEP[p] = 'to'; draw(); after(); };
+  const btn = $(p + '-sum'); if (!btn) return;
+  btn.onclick = () => openDpModal(st, lo, hi, (d0, d1) => { st.d0 = d0; st.d1 = d1; const t = $(p + '-sumt'); if (t) t.innerHTML = dpSumText(d0, d1, lo, hi); after(); });
+}
+function openDpModal(st, lo, hi, done) {
+  const tmp = { d0: st.d0, d1: Math.max(st.d1, st.d0) }; let step = 'from';
+  const m = document.createElement('div'); m.className = 'dpmodal'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'בחירת דפים');
+  m.innerHTML = '<div class="dpm-panel"><div class="dpm-body"></div></div>'; document.body.appendChild(m);
+  const body = m.querySelector('.dpm-body');
+  const close = () => { m.classList.remove('on'); setTimeout(() => m.remove(), 200); document.removeEventListener('keydown', onKey); };
+  const onKey = ev => { if (ev.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  m.addEventListener('click', ev => { if (ev.target === m) close(); });
+  const draw = () => {
+    if (step === 'from') {
+      body.innerHTML = '<div class="dpstep"><b>מדף</b><span class="small muted">שלב 1 מתוך 2</span></div>' + dpHtml('dpm-d0', tmp.d0, { lo, hi }) +
+        '<div class="dpm-act"><button class="btn line" id="dpm-cancel">ביטול</button><button class="btn" id="dpm-next">הבא: עד דף</button></div>';
+      dpBind('dpm-d0', { lo, hi, edge: 'first', onChange: d => { tmp.d0 = d; } });
+      $('dpm-next').onclick = () => { tmp.d1 = tmp.d0; step = 'to'; draw(); };
     } else {
-      dpBind(p + '-d1', { lo: st.d0, hi, edge: 'first', onChange: d => { st.d1 = d; after(); } });
-      $(p + '-back').onclick = () => { DPSTEP[p] = 'from'; draw(); };
+      const k = dpPkOf(tmp.d0, { lo, hi });
+      body.innerHTML = '<button class="dpback" id="dpm-back"><span>מדף ' + hebNum(tmp.d0) + ', ' + esc(PEREKS[k][0]) + '</span><span class="dpchg">שינוי</span></button>' +
+        '<div class="dpstep"><b>עד דף</b><span class="small muted">שלב 2 מתוך 2</span></div>' + dpHtml('dpm-d1', tmp.d1, { lo: tmp.d0, hi }) +
+        '<p class="small muted dpone">לדף אחד בלבד, משאירים את אותו דף.</p>' +
+        '<div class="dpm-act"><button class="btn line" id="dpm-cancel">ביטול</button><button class="btn" id="dpm-done">סיום</button></div>';
+      dpBind('dpm-d1', { lo: tmp.d0, hi, edge: 'first', onChange: d => { tmp.d1 = d; } });
+      $('dpm-back').onclick = () => { step = 'from'; draw(); };
+      $('dpm-done').onclick = () => { close(); done(tmp.d0, tmp.d1); };
     }
-  }
-  bind();
+    $('dpm-cancel').onclick = close;
+  };
+  draw(); requestAnimationFrame(() => m.classList.add('on'));
 }
 function dafName(a) { return 'דף ' + hebNum(dafNum(a)) + (a % 2 ? ' ע"ב' : ' ע"א'); }
 function dafShort(a) { return hebNum(dafNum(a)) + (a % 2 ? ':' : '.'); }
@@ -498,7 +516,7 @@ function scopeHtml(noKind, compact) {
       PEREKS.map((pk, k) => { const n = pkCount(k); return '<button class="chip" data-v="' + k + '" aria-pressed="' + (SC.pereks.indexOf(k) >= 0) + '"' + (n ? '' : ' disabled') + '>' + ordPk(k) + '. ' + esc(pk[0]) + ' (' + n + ')</button>'; }).join('') + '</div>' +
       '<p class="small muted">אפשר לסמן כמה פרקים יחד, למשל את הפרקים שכבר למדת.</p>';
   } else if (SC.by === 'daf') {
-    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157) + '<p class="small muted">מגלגלים את הפרק ואת הדף למעלה ולמטה, או לוחצים.</p>';
+    sub = dpRangeHtml('sc', SC.d0, SC.d1, 2, 157);
   } else if (SC.by === 'topic') {
     sub = '<select id="sc-topic" aria-label="נושא"><option value="-1">כל הנושאים (' + CN.length + ')</option>' +
       TOPICS.map((t, k) => '<option value="' + k + '"' + (SC.topic === k ? ' selected' : '') + '>' + esc(t) + ' (' + CN.filter(c => c.t === k).length + ')</option>').join('') + '</select>';
