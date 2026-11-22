@@ -643,6 +643,15 @@ function render(keep) {
    each panel turns back to right to left inside. While a finger drags, the rail follows it with no transition */
 const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const rail = document.getElementById('rail'), railWrap = document.getElementById('rail-wrap');
+/* the tab bar covers the bottom of every screen; its real height (a larger system font, the system's navigation bar) sets
+   how much room the screens leave under their last item (--tabs-h), so nothing stays hidden behind it */
+(function tabsHeight() {
+  const bar = document.getElementById('tabs'); if (!bar) return;
+  const set = () => { const h = Math.ceil(bar.getBoundingClientRect().height); if (h) document.documentElement.style.setProperty('--tabs-h', h + 'px'); };
+  set(); window.addEventListener('resize', set); window.addEventListener('load', set);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(set);
+  if (window.ResizeObserver) new ResizeObserver(set).observe(bar);
+})();
 /* the frame only clips the rail; if anything scrolls it (scrollIntoView, focus), put it back at once */
 railWrap.addEventListener('scroll', () => { if (railWrap.scrollLeft || railWrap.scrollTop) { railWrap.scrollLeft = 0; railWrap.scrollTop = 0; } });
 const EASE = 'transform 240ms cubic-bezier(0.22, 1, 0.36, 1)';
