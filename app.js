@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.11';
+const VERSION = '1.6.12';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -18,6 +18,14 @@ const FEEDBACK_EMAIL = 'neriatsaf@gmail.com';
 /* running inside the Android app, or in a browser; and in a browser, whether it was opened from the home screen */
 const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const BETA = NATIVE || (/[?&]test\b/.test(location.search) && /[?&]beta\b/.test(location.search));
+/* usage measurement (Google Analytics 4, loaded by index.html on the public site only): one event per action, and
+   nothing at all when the script is missing, blocked or offline. With ?test the events are kept on window.__ev */
+function track(name, params) {
+  try {
+    if (/[?&]test\b/.test(location.search)) (window.__ev = window.__ev || []).push([name, params || {}]);
+    if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+  } catch (e) { /* measurement never stops the app */ }
+}
 const STANDALONE = !!((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone);
 const VARIANTS = window.VARIANTS || {}, ALIASES = window.ALIASES || {};
 /* the first DECK_CORE entries are the chosen store (three uses or more in the Gemara); the rest is the expanded store of all 24 chapters, rare words included */
@@ -679,6 +687,7 @@ function railAt(tab, px) { return 'translate3d(calc(' + (-RAIL.indexOf(tab) * 10
 function place(tab, animate) {
   rail.style.transition = animate ? EASE : 'none';
   rail.style.transform = railAt(tab, 0);
+  if (shownTab !== tab) track('tab_switch', { tab_name: tab });
   shownTab = tab;
   RAIL.forEach(t => { const p = PANEL[t]; if (t === tab) { p.removeAttribute('inert'); p.removeAttribute('aria-hidden'); } else { p.setAttribute('inert', ''); p.setAttribute('aria-hidden', 'true'); } });
 }
@@ -751,7 +760,7 @@ function bindInstall() {
 }
 if (!NATIVE) {
   window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); installEv = ev; if (R.tab === 'learn' && !R.sub) { const keep = view; view = PANEL.learn; const b = $('install'); if (b) b.remove(); PANEL.learn.insertAdjacentHTML('beforeend', installHtml()); bindInstall(); view = keep; } });
-  window.addEventListener('appinstalled', () => { const b = document.getElementById('install'); if (b) b.remove(); });
+  window.addEventListener('appinstalled', () => { track('appinstalled'); const b = document.getElementById('install'); if (b) b.remove(); });
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     const had = !!navigator.serviceWorker.controller;
     let asked = false;
@@ -1003,6 +1012,7 @@ function requeue(item, gap) { const s = session; if (s.queue.length > 400) retur
 function advance() { const s = session; s.pos++; s.mode = null; s.q = null; s.stage = 'ask'; s.picked = null; renderSession(); }
 function renderSessionDone() {
   const s = session, n = s.missed.length, r = s.review;
+  if (!s.tracked) { s.tracked = true; track('study_complete', { kind: s.kind, right: s.right, wrong: s.wrong, finished: !s.queue[s.pos] }); }
   view.innerHTML = '<div class="result"><div class="big">' + s.right + '</div><p>תשובות נכונות, ' + s.wrong + ' טעויות</p>' +
     (r && r.pos ? '<p class="small">בחזרה בסוף הסבב: ' + r.right + ' נכונות מתוך ' + Math.min(r.pos, r.qs.length) + '.</p>' : '') +
     (n ? '<p class="muted small">ערכים שטעית בהם יחזרו מחר, ונכנסו לרשימת הטעויות החוזרות.</p>' : '') +
@@ -1348,6 +1358,7 @@ function renderQuiz() {
 }
 function finishQuiz() {
   const z = quiz; z.answered = z.pos + (z.stage === 'shown' ? 1 : 0);
+  if (z.answered) track('quiz_complete', { topic: z.kind === 'content' ? 'content' : z.daily ? 'daily' : z.drill ? 'mistakes' : (z.kind || 'words'), score: Math.round(z.right / z.answered * 100), right: z.right, answered: z.answered, total: z.qs.length });
   if (z.bestKey && z.answered === z.qs.length) { const pct = Math.round(z.right / z.qs.length * 100); if (!S.best[z.bestKey] || pct > S.best[z.bestKey]) { S.best[z.bestKey] = pct; save(); } }
   nav('quiz', 'done', true);
 }
@@ -2375,6 +2386,7 @@ function xwDone() {
   /* a full board with a mistake is not checked as a whole: nothing turns red, and the ✗ beside a word in the bar is what
      shows where to look. The board ends when every letter is right */
   if (!b.L.every((ch, k) => !ch || norm(g.typed[k]) === ch)) return;
+  if (!g.done) track('crossword_complete', { type: g.arch ? 'archive' : g.day ? 'daily' : 'personal', seconds: g.secs || 0, hints: g.hint.size });
   g.done = true; xwStopClock();
   g.mistakes = [...new Set([...g.wrongW, ...g.hintW])].map(i => ({ e: b.words[i].e, picked: null }));
   if (g.arch) { if (!g.lab) { const a = S.settings.arch || { xw: {}, wd: {} }; a.xw[g.b.ed] = g.secs || 1; S.settings.arch = a; save(); } }
@@ -2596,6 +2608,7 @@ function wdEnter() {
   g.rows.push(g.cur); g.cur = '';
   if (g.rows[g.rows.length - 1] === g.ans) { g.done = true; g.won = true; }
   else if (g.rows.length >= 6) g.done = true;
+  if (g.done) track('wordle_complete', { success: g.won, guesses: g.rows.length, hint: !!g.hint, archive: !!g.arch });
   if (g.done && g.arch) { if (!g.lab) { const a = S.settings.arch || { xw: {}, wd: {} }; if (g.won) a.wd[g.ed] = g.rows.length; S.settings.arch = a; save(); } }
   else if (g.done) {
     S.settings.wdLast = { day: g.day, n: g.rows.length, won: g.won, hint: g.hint };

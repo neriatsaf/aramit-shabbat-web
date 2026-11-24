@@ -16,6 +16,14 @@ var dk = false; try { var st = (JSON.parse(localStorage.getItem('aramit-shabbat-
 document.documentElement.setAttribute('data-theme', dk ? 'dark' : 'light');
 if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content', '#15100b');</script>
 <style>html[data-theme=dark],html[data-theme=dark] body{background:#15100B;color-scheme:dark}html[data-theme=light],html[data-theme=light] body{background:#F2E9D8}</style>
+<script>/* Google Analytics 4, on the public site only (not on a test server or in the Android app). The script loads
+   asynchronously; offline or blocked, gtag only queues into dataLayer and the app runs as before */
+if (location.hostname === 'pshita.tsafrir.com' && !/[?&]test\b/.test(location.search)) {
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function () { window.dataLayer.push(arguments); };
+  window.gtag('js', new Date()); window.gtag('config', 'G-NBG3N3QDR1');
+  (function () { var s = document.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=G-NBG3N3QDR1'; s.onerror = function () { /* blocked or offline */ }; document.head.appendChild(s); })();
+}</script>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icons/favicon-48.png">
