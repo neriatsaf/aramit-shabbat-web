@@ -224,8 +224,6 @@ body.xwmode .top{display:none}
 .cell-void{background:var(--xv);pointer-events:none}
 /* empty cells that reach the edge are not drawn at all: the board keeps a stepped outline */
 .cell-out{background:transparent;pointer-events:none}
-/* the anchor concept of the daily board: a gold frame inside each of its cells */
-.cell-letter.anchor::after{content:"";position:absolute;inset:1px;border:2px solid var(--xanchor);border-radius:2px;pointer-events:none}
 .cell-letter.lock{font-weight:900}
 .cell-clue{background:var(--xk);color:var(--xkt);display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);text-align:center;justify-items:stretch;align-items:stretch}
 .cell-clue.two{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}

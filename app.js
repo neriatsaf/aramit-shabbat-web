@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.3';
+const VERSION = '1.6.4';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -2064,15 +2064,15 @@ function xwSolved(w) { return w.cells.every(k => xg.typed[k] && norm(xg.typed[k]
    In a shared cell the left-starting word is always on top */
 const XLEFT = { l: 1, ld: 1 };
 function xwBoardHtml() {
-  /* the gold frame marks the anchor while it is open; once it is solved it is a word like the others */
-  const g = xg, b = g.b, act = b.words[g.act], on = new Set(act.cells), anchor = new Set(b.anchor && !xwSolved(b.words[0]) ? b.words[0].cells : []);
+  /* no frame marks the anchor word on the board (removed 24.11.2026 at the owner's request) */
+  const g = xg, b = g.b, act = b.words[g.act], on = new Set(act.cells);
   const arrows = {};
   b.K.forEach(ks => { if (ks) ks.forEach(x => { const f = b.words[x.wi].cells[0]; (arrows[f] = arrows[f] || []).push(x); }); });
   let h = '';
   for (let r = 0; r < b.R; r++) for (let c = 0; c < b.C; c++) {
     const k = r * b.C + c;
     if (b.L[k]) {
-      const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (anchor.has(k) ? ' anchor' : '') + (xwLocked(k) ? ' lock' : '') +
+      const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') + (xwLocked(k) ? ' lock' : '') +
         (g.cw[k].some(i => xwSolved(b.words[i])) ? ' sol' : '');   /* a letter of a solved word: a slightly different shade */
       const pk = g.peek && !g.typed[k];   /* 🛠️ beta: the solution shows faint in the cells not filled */
       const ar = (arrows[k] || []).map(x => '<i class="xa xa-' + x.t + (xwSolved(b.words[x.wi]) ? ' done' : '') + '" data-wi="' + x.wi + '" aria-hidden="true">' + XARROW[x.t] + '</i>').join('');
