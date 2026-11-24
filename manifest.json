@@ -1,6 +1,6 @@
 {
-  "name": "ארמית: מסכת שבת",
-  "short_name": "ארמית שבת",
+  "name": "פשיטא: הארמית של מסכת שבת",
+  "short_name": "פשיטא",
   "description": "מילון, לימוד, חידונים ותשחץ בארמית של מסכת שבת. עובד גם בלי רשת.",
   "lang": "he",
   "dir": "rtl",
@@ -8,8 +8,8 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0f141d",
-  "theme_color": "#1F3C6E",
+  "background_color": "#f2e9d8",
+  "theme_color": "#5b2a17",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

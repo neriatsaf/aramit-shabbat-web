@@ -3,27 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ארמית: מסכת שבת</title>
-<meta name="theme-color" content="#f4f6fa">
+<title>פשיטא: הארמית של מסכת שבת</title>
+<meta name="theme-color" content="#f2e9d8">
 <script>/* the display mode before the first paint, so a light screen never flashes dark: light unless dark was chosen */
 var dk = false; try { var st = (JSON.parse(localStorage.getItem('aramit-shabbat-v1')) || {}).settings || {}; dk = st.theme === 'dark'; } catch (e) { /* storage blocked: light */ }
 document.documentElement.setAttribute('data-theme', dk ? 'dark' : 'light');
-if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content', '#1b2436');</script>
-<style>html[data-theme=dark],html[data-theme=dark] body{background:#1B2436;color-scheme:dark}html[data-theme=light],html[data-theme=light] body{background:#F4F6FA}</style>
+if (dk) document.querySelector('meta[name=theme-color]').setAttribute('content', '#15100b');</script>
+<style>html[data-theme=dark],html[data-theme=dark] body{background:#15100B;color-scheme:dark}html[data-theme=light],html[data-theme=light] body{background:#F2E9D8}</style>
 <link rel="stylesheet" href="style.css">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icons/favicon-48.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="ארמית שבת">
+<meta name="apple-mobile-web-app-title" content="פשיטא">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 <div id="app">
   <header class="top">
-    <h1>ארמית: מסכת שבת<small id="subtitle"></small></h1>
-    <span class="topbtns"><button class="iconbtn" id="btn-theme" aria-label="מעבר למצב כהה">🌙</button><button class="iconbtn" id="btn-settings" aria-label="הגדרות">הגדרות</button></span>
+    <h1>פשיטא<small id="subtitle">מסכת שבת · מבית ישיבת הגולן</small></h1>
+    <span class="topbtns"><button class="iconbtn" id="btn-theme" aria-label="מעבר למצב כהה"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button><button class="iconbtn" id="btn-settings" aria-label="הגדרות"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button></span>
   </header>
   <main id="rail-wrap" dir="ltr"><div id="rail" dir="ltr">
     <section class="panel" id="p-xw" dir="rtl" aria-label="תשחץ"></section>

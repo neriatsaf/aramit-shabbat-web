@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.5.3';
+const VERSION = '1.6.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -629,7 +629,6 @@ function render(keep) {
   }
   const lit = R.tab === 'xw' ? 'games' : R.tab;   /* the crossword belongs to the games tab */
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === lit)));
-  $('subtitle').textContent = D.length + ' מילים וביטויים, ' + CN.length + ' מושגים';
   const from = shownTab;
   document.body.classList.toggle('xwmode', R.tab === 'xw' && R.sub === 'board');
   if (!(R.tab === 'xw' && R.sub === 'board') && xg && xg.open) { xg.open = false; xwSave(); }
@@ -779,11 +778,11 @@ function dailyCardHtml() {
   let wgo = false; try { const o = JSON.parse(localStorage.getItem(WKEY) || 'null'); wgo = !!(o && o.day === day && o.rows && o.rows.length && !o.done); } catch (x) { /* none */ }
   const ed = tb ? tb.ed : xwEdition(day);
   return '<div class="hub" id="hub"><p class="hubh">האתגרים של היום</p><div class="hubg">' +
-    '<button class="hcard" id="h-xw"><b>תשחץ יומי #' + ed + '</b>' + (tb ? '<span class="ht">' + esc(tb.theme) + '</span>' : '') +
+    '<button class="hcard" id="h-xw"><span class="hico xw" aria-hidden="true"><i class="y"></i><i></i><i class="y"></i><i></i><i class="y"></i><i></i><i class="y"></i><i></i><i class="y"></i></span><b>התשחץ היומי #' + ed + '</b>' + (tb ? '<span class="ht">' + esc(tb.theme) + '</span>' : '') +
       '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + ' <em>🛡️ ' + xi.shields + '/2</em></span></button>' +
-    '<button class="hcard" id="h-wd"><b>וורדל מסכת שבת #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
+    '<button class="hcard" id="h-wd"><span class="hico wd" aria-hidden="true"><i class="g"></i><i></i><i class="y"></i><i></i><i class="g"></i></span><b>וורדל #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
       '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + ' <em>🛡️ ' + wi.shields + '/2</em></span></button>' +
-    '</div><div class="hubx">' + (ed > 1 || BETA ? '<button class="hlink" id="h-arch">ארכיון 📅</button>' : '') + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
+    '</div><div class="hubx">' + (ed > 1 || BETA ? '<button class="hlink" id="h-arch">ארכיון ‹</button>' : '') + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
 }
 /* where the learner holds in the tractate: a page range (מדף עד דף) chosen in "מה מתרגלים" or in the quiz.
    It filters the daily learning, the quiz and the personal crossword; "+ דף" moves the last page on by one */
@@ -813,10 +812,11 @@ function renderLearn() {
   const drill = drillScope(), fresh = Math.min(room, st.fresh), todo = drill ? Math.min(list.length, 40) : st.due + fresh;
   const fem = SC.kind === 'words';
   view.innerHTML = scopeBar() +
-    '<div class="stats"><div class="stat"><b>' + st.due + '</b><span>לחזרה היום</span></div>' +
-    '<div class="stat"><b>' + fresh + '</b><span>' + (fem ? 'חדשות להיום' : 'חדשים להיום') + '</span></div>' +
-    '<div class="stat"><b>' + st.learned + '</b><span>ידועים</span></div></div>' +
-    '<button class="btn wide" id="go"' + (list.length ? '' : ' disabled') + '>' + (!list.length ? 'אין ערכים בבחירה הזו' : drill ? 'תרגול הרשימה (' + todo + ')' : todo ? 'התחלת הלימוד של היום (' + todo + ')' : 'להמשיך ללמוד') + '</button>' +
+    '<div class="today"><div class="ring" style="--p:' + (st.total ? (st.learned / st.total).toFixed(3) : 0) + '"><span><b>' + st.learned + '</b><small>מתוך ' + st.total + '</small></span></div>' +
+    '<div class="tlist"><h3>הלימוד של היום</h3><div><span>לחזרה היום</span><b>' + st.due + '</b></div>' +
+    '<div><span>' + (fem ? 'חדשות להיום' : 'חדשים להיום') + '</span><b>' + fresh + '</b></div>' +
+    '<div><span>ידועים</span><b>' + st.learned + '</b></div></div>' +
+    '<button class="btn wide" id="go"' + (list.length ? '' : ' disabled') + '>' + (!list.length ? 'אין ערכים בבחירה הזו' : drill ? 'תרגול הרשימה (' + todo + ')' : todo ? 'התחלת הלימוד של היום (' + todo + ')' : 'להמשיך ללמוד') + '</button></div>' +
     (list.length ? '<div class="stack"><div class="bar">' + seg.map(s => s[1] ? '<i style="background:' + s[0] + ';width:' + (s[1] / st.total * 100) + '%"></i>' : '').join('') + '</div>' +
     '<div class="legend"><span style="--c:var(--good)">ידועים ' + seg[3][1] + '</span><span style="--c:var(--brand)">בתהליך ' + seg[2][1] + '</span><span style="--c:var(--gold)">בתחילת הדרך ' + seg[1][1] + '</span><span style="--c:var(--line)">עוד לא נלמדו ' + st.fresh + '</span></div>' +
     '<button class="link start" id="pg-open">פירוט ההתקדמות לפי פרקים ונושאים</button></div>' : '') +
@@ -2402,13 +2402,13 @@ function xwAids(h) { return h ? ' (רמזים: ' + h + ')' : ', בלי רמזי�
    the streak and the address. Each line opens with a right-to-left mark, so it reads right in a chat */
 function shareLines(lines) { const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname); return lines.map(x => '\u200f' + x).join('\n') + (link ? '\n' + link : ''); }
 function dailyShareText(b, secs, hints, checks, day) {
-  return shareLines(['ארמית: מסכת שבת', '🧩 תשחץ יומי #' + b.ed, '⏱️ זמן: ' + mmss(secs || 0), '💡 ' + (hints ? 'רמזים: ' + hints : 'בלי רמזים'), '🔥 רצף: ' + xwStreak()]);
+  return shareLines(['פשיטא: הארמית של מסכת שבת', '🧩 תשחץ יומי #' + b.ed, '⏱️ זמן: ' + mmss(secs || 0), '💡 ' + (hints ? 'רמזים: ' + hints : 'בלי רמזים'), '🔥 רצף: ' + xwStreak()]);
 }
 function xwShareText() {
   const g = xg, h = g.hint.size, wrong = g.done ? 0 : xwWrong();
   if (g.done && g.day && g.b.anchor && !g.arch) return dailyShareText(g.b, g.secs, h, 0, g.day);
   const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname);
-  return 'ארמית: מסכת שבת\n' + (g.day ? 'תשחץ יומי' + (g.b.anchor ? ' #' + g.b.ed + ': ' + g.b.theme : '') + ', ' + g.day.split('-').reverse().join('.') : 'תשחץ') + '\n' +
+  return 'פשיטא: הארמית של מסכת שבת\n' + (g.day ? 'תשחץ יומי' + (g.b.anchor ? ' #' + g.b.ed + ': ' + g.b.theme : '') + ', ' + g.day.split('-').reverse().join('.') : 'תשחץ') + '\n' +
     (g.done ? 'פתרתי ' : 'מילאתי ') + g.b.words.length + ' מילים ב-' + mmss(g.secs || 0) + xwAids(h, g.checks || 0) +
     (wrong ? ', ' + nWrongCells(wrong) : '') + (link ? '\n' + link : '');
 }
@@ -2608,7 +2608,7 @@ function wdEndHtml() {
 }
 function wdShareText() {
   const g = wd, link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname), n = streakOf(S.settings.wdDays);
-  return shareLines(['ארמית: מסכת שבת', '🟩 וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : ''), '🎯 ניחושים: ' + (g.won ? g.rows.length : 'X') + '/6',
+  return shareLines(['פשיטא: הארמית של מסכת שבת', '🟩 וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : ''), '🎯 ניחושים: ' + (g.won ? g.rows.length : 'X') + '/6',
     '💡 ' + (g.hint ? 'רמזים: 1 (רמז פרק)' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n],
     g.rows.map(w => wdScore(w, g.ans).map(v => ({ g: '🟩', y: '🟨', x: '⬜' })[v]).join(''))));
 }
@@ -2653,7 +2653,7 @@ function backupDue() {
 }
 function backupNote() {
   if (!backupDue()) return;
-  const at = view.querySelector('.stats'); (at || view).insertAdjacentHTML(at ? 'beforebegin' : 'beforeend', '<div class="bk-note" id="bk-note"><p>עבר חודש מאז הגיבוי האחרון. ההתקדמות שמורה רק במכשיר הזה, וגיבוי שומר עליה אם המכשיר יוחלף או ינוקה.</p>' +
+  const at = view.querySelector('.today'); (at || view).insertAdjacentHTML(at ? 'beforebegin' : 'beforeend', '<div class="bk-note" id="bk-note"><p>עבר חודש מאז הגיבוי האחרון. ההתקדמות שמורה רק במכשיר הזה, וגיבוי שומר עליה אם המכשיר יוחלף או ינוקה.</p>' +
     '<div class="row"><button class="btn" id="bk-go">גיבוי עכשיו</button><button class="btn line" id="bk-later">לא עכשיו</button></div></div>');
   $('bk-go').onclick = () => { exportBackup(); const n = $('bk-note'); if (n) n.remove(); };
   $('bk-later').onclick = () => { S.settings.backupSnooze = Date.now(); save(); const n = $('bk-note'); if (n) n.remove(); };
@@ -2680,8 +2680,8 @@ function applyLook() {
   document.documentElement.setAttribute('data-size', S.settings.size || 'm');
   const dark = S.settings.theme === 'dark';
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  const b = document.getElementById('btn-theme'); if (b) { b.textContent = dark ? '☀️' : '🌙'; b.setAttribute('aria-label', dark ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'); }
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', dark ? '#1b2436' : '#f4f6fa');
+  const b = document.getElementById('btn-theme'); if (b) { b.innerHTML = dark ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>' : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>'; b.setAttribute('aria-label', dark ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'); }
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', dark ? '#15100b' : '#f2e9d8');
 }
 /* ---------- backup, restore and the daily reminder ---------- */
 function plug(name) {
@@ -2699,7 +2699,7 @@ function reportWhere() {
 }
 function feedbackUrl() {
   const where = reportWhere();
-  const body = 'דיווח על טעות באפליקציה ארמית: מסכת שבת\n' + where + '\nגרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '\n\nהטעות: ';
+  const body = 'דיווח על טעות באפליקציה פשיטא\n' + where + '\nגרסה ' + VERSION + ', ' + (NATIVE ? 'אנדרואיד' : 'דפדפן') + '\n\nהטעות: ';
   return 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('דיווח על טעות: ' + where) + '&body=' + encodeURIComponent(body);
 }
 /* the beta lab (APK only) can move the date by whole days, to try editions and lifelines; elsewhere the shift is always 0 */

@@ -11,24 +11,30 @@
 @font-face{font-family:"Assistant";font-weight:700;font-display:swap;src:url(fonts/assistant-latin-700-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
 
 :root{
-  --bg:#F4F6FA; --surface:#FFFFFF; --ink:#14213A; --muted:#5A6577; --line:#D6DCE5; --soft:#E4E9F1;
-  --brand:#1F3C6E; --brand-ink:#FFFFFF; --gold:#A8751B; --good:#2C7A4B; --bad:#B03A3A;
-  --good-soft:#DDEAE2; --bad-soft:#F2DFDF; --gold-soft:#D2C6B1; --brand-soft:#CED4DF; --key:#FFFFFF;
+  --bg:#F2E9D8; --surface:#FBF6EC; --ink:#2A1B10; --muted:#5E4936; --line:#D8C6A6; --soft:#EADFC9;
+  --brand:#5B2A17; --brand-ink:#FBF3E2; --gold:#A6782A; --good:#3F7A3A; --bad:#A63A2E;
+  --good-soft:#E0EAD3; --bad-soft:#F3DCD4; --gold-soft:#EBDDBF; --brand-soft:#E3CDBE; --key:#FBF6EC;
+  --rule:#B79B6C; --hero:#3A2114; --hero-ink:#F6EBD3; --hero-card:#4A2C1B; --hero-line:#6D4A2E; --hero-sub:#DCC9A6;
+  --cta:#E0B566; --cta-ink:#2A1B10; --link:#E0B566;
   --f-word:"Frank Ruhl Libre","Noto Serif Hebrew","David",serif;
   --f-ui:"Assistant","Noto Sans Hebrew","Segoe UI",Arial,sans-serif;
-  --fs:17px;
+  --fs:18px;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#1B2436; --surface:#26324A; --ink:#EDF1F7; --muted:#A7B3C6; --line:#3B4A68; --soft:#2E3B57;
-  --brand:#8DB4F0; --brand-ink:#0F1A2E; --gold:#E3B45E; --good:#74C795; --bad:#EC8A8A;
-  --good-soft:#2C4846; --bad-soft:#4A3446; --gold-soft:#5E5640; --brand-soft:#3A4C6E; --key:#384663; color-scheme:dark}}
+  --bg:#15100B; --surface:#1F1811; --ink:#EEE2CB; --muted:#CDBA9C; --line:#3A2D20; --soft:#2A2117;
+  --brand:#CFA963; --brand-ink:#1A120B; --gold:#DE8F55; --good:#93C47D; --bad:#E58B7B;
+  --good-soft:#2B3A22; --bad-soft:#47261F; --gold-soft:#3A2E1C; --brand-soft:#4A3A24; --key:#2E241A;
+  --rule:#6B5536; --hero:#211912; --hero-ink:#EFE3CC; --hero-card:#2A2017; --hero-line:#3E3022; --hero-sub:#C9B798;
+  --cta:#D9B266; --cta-ink:#2A1B10; --link:#E6D3AE; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#1B2436; --surface:#26324A; --ink:#EDF1F7; --muted:#A7B3C6; --line:#3B4A68; --soft:#2E3B57;
-  --brand:#8DB4F0; --brand-ink:#0F1A2E; --gold:#E3B45E; --good:#74C795; --bad:#EC8A8A;
-  --good-soft:#2C4846; --bad-soft:#4A3446; --gold-soft:#5E5640; --brand-soft:#3A4C6E; --key:#384663; color-scheme:dark}
-:root[data-size="l"]{--fs:19px}
-:root[data-size="xl"]{--fs:21px}
+  --bg:#15100B; --surface:#1F1811; --ink:#EEE2CB; --muted:#CDBA9C; --line:#3A2D20; --soft:#2A2117;
+  --brand:#CFA963; --brand-ink:#1A120B; --gold:#DE8F55; --good:#93C47D; --bad:#E58B7B;
+  --good-soft:#2B3A22; --bad-soft:#47261F; --gold-soft:#3A2E1C; --brand-soft:#4A3A24; --key:#2E241A;
+  --rule:#6B5536; --hero:#211912; --hero-ink:#EFE3CC; --hero-card:#2A2017; --hero-line:#3E3022; --hero-sub:#C9B798;
+  --cta:#D9B266; --cta-ink:#2A1B10; --link:#E6D3AE; color-scheme:dark}
+:root[data-size="l"]{--fs:20px}
+:root[data-size="xl"]{--fs:22px}
 
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;margin:0;overflow:hidden}
@@ -195,8 +201,8 @@ h3{font-family:var(--f-word);font-weight:700;font-size:1.05rem;margin:14px 0 0}
 .qtext{font-size:1.14rem;font-weight:600;line-height:1.5;text-align:start;width:100%;margin:0;overflow-wrap:anywhere}
 .quote{font-family:var(--f-word);font-size:1.08rem;line-height:1.65;margin:0;overflow-wrap:anywhere}
 /* arrow crossword, in plain colours: a light board in light mode, a soft dark one in dark mode */
-:root{--xanchor:#D4A84F;--xframe:#94A3B8;--xgap:#CBD5E1;--xv:#A3AEC0;--xl:#FFFFFF;--xlb:#CBD5E1;--xlt:#0F172A;--xon:#BFDBFE;--xcur:#FDE68A;--xcurb:#D97706;--xbad:#FECACA;--xbadt:#B91C1C;--xhint:#6D28D9;--xhb:#EDE4FB;--xk:#DBEAFE;--xkt:#1E3A8A;--xka:#1E3A8A;--xksep:#93C5FD;--xok:#16A34A;--xsol:#ECF7EF;--xarw:#1D4ED8}
-:root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#141C2C;--xgap:#141C2C;--xv:#141C2C;--xl:#33415C;--xlb:#5C6F94;--xlt:#F1F5F9;--xon:#46639A;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A30;--xbadt:#FFC9C9;--xhint:#EBDDFF;--xhb:#55407F;--xk:#285596;--xkt:#E6EEFB;--xka:#FFFFFF;--xksep:#5C84C4;--xok:#4ADE80;--xsol:#2D4A55;--xarw:#BFD7FF}
+:root{--xanchor:#B8862E;--xframe:#BFA47A;--xgap:#D8C6A6;--xv:#C9B48E;--xl:#FFFDF7;--xlb:#D8C6A6;--xlt:#2A1B10;--xon:#EED9AC;--xcur:#FFE08A;--xcurb:#B7791F;--xbad:#F6D0C8;--xbadt:#A63A2E;--xhint:#6D28D9;--xhb:#EDE4FB;--xk:#E8D3A8;--xkt:#3E2512;--xka:#3E2512;--xksep:#CDB48A;--xok:#3F7A3A;--xsol:#E6F0DC;--xarw:#7A3E1D}
+:root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#110C08;--xgap:#110C08;--xv:#110C08;--xl:#241B13;--xlb:#4A3A28;--xlt:#F3E8D2;--xon:#5E4626;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A26;--xbadt:#FFC9BF;--xhint:#EBDDFF;--xhb:#55407F;--xk:#5A4128;--xkt:#F6EAD2;--xka:#FFFFFF;--xksep:#6B5536;--xok:#93C47D;--xsol:#2E4026;--xarw:#E8C887}
 .panel.tight{padding-top:6px;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));overflow:hidden}
 body.xwmode .top{display:none}
 .xw>.row .link{min-height:34px;padding:4px 6px}
@@ -470,3 +476,64 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .dpm-act{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:4px}
 .dpm-panel .dpstrip{height:180px;padding:72px 4px}
 .dpm-panel .dpwin::before{top:72px}
+/* 1.6: the "Gemara page" look: parchment and ink, the classic Hebrew print face for the title, a double rule under it,
+   bold readable text everywhere else */
+body{font-weight:600}
+body{background-image:radial-gradient(ellipse at 50% -10%,rgba(166,120,42,.10),transparent 60%);background-attachment:fixed}
+:root[data-theme="dark"] body{background-image:none}
+h2,h3{font-family:var(--f-ui);font-weight:700}
+.top{padding:14px 16px 10px;margin:0 16px;padding-inline:0;border-bottom:3px double var(--rule)}
+.top h1{font-size:1.85rem;letter-spacing:.01em}
+.top h1 small{font-size:.5em;font-weight:600;letter-spacing:0;margin-top:4px}
+.iconbtn{border-radius:50%;width:44px;min-width:44px;padding:0;display:inline-grid;place-items:center;color:var(--muted)}
+.iconbtn svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#btn-theme{padding:0}
+.panel{padding-top:14px}
+/* the challenges of the day: a dark card with a light frame, one inner card per game */
+.hub{background:var(--hero);color:var(--hero-ink);border-radius:16px;padding:14px;gap:10px;position:relative;box-shadow:0 10px 24px -14px rgba(40,20,8,.6)}
+:root:not([data-theme="dark"]) .hub::before{content:"";position:absolute;inset:6px;border:1px solid var(--hero-line);border-radius:11px;pointer-events:none}
+.hubh{font-size:1.05rem;opacity:1;margin:2px 6px 0;position:relative}
+.hubg{gap:10px;position:relative}
+.hcard{background:var(--hero-card);color:var(--hero-ink);border:1px solid var(--hero-line);border-radius:12px;padding:12px;gap:4px;min-height:0}
+.hcard b{font-family:var(--f-ui);font-size:1.02rem;font-weight:700}
+.hcard .ht{color:var(--hero-sub);font-size:.84rem;font-weight:600;margin-bottom:8px}
+.hcard .hs{margin-top:auto;background:var(--cta);color:var(--cta-ink);border-radius:999px;padding:3px 14px;font-size:.88rem}
+.hcard .hs.ok{background:none;color:#9CC587;padding:3px 0}
+.hcard .hf{color:var(--hero-sub);font-size:.84rem}
+.hico{display:grid;gap:2px;height:26px;align-content:center;margin-bottom:2px}
+.hico i{display:block;border-radius:2px;background:#6D4A2E}
+.hico.xw{grid-template-columns:repeat(3,8px)}
+.hico.xw i{width:8px;height:8px}
+.hico.wd{grid-auto-flow:column;grid-auto-columns:13px}
+.hico.wd i{width:13px;height:13px;border-radius:3px}
+.hico i.g{background:#7FA35E}.hico i.y{background:#D6A84C}
+.hlink{color:var(--link);text-decoration:none;font-weight:700}
+.hubx{position:relative;padding:0 6px}
+/* today's study: a ring of what is known, the three numbers beside it, the start button under them */
+.today{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+.today .btn{grid-column:1/-1}
+.ring{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--brand) calc(var(--p,0)*360deg),var(--gold-soft) 0)}
+.ring>span{width:78px;height:78px;border-radius:50%;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05;text-align:center}
+.ring b{font-size:1.65rem;font-weight:700;font-variant-numeric:tabular-nums}
+.ring small{font-size:.74rem;color:var(--muted);margin-top:2px}
+.tlist{display:flex;flex-direction:column;min-width:0}
+.tlist h3{margin:0 0 4px;font-size:1.15rem}
+.tlist div{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dotted var(--line);font-size:.95rem}
+.tlist div:last-child{border:0}
+.tlist div b{font-variant-numeric:tabular-nums}
+.btn{box-shadow:0 6px 14px -9px rgba(60,25,10,.7)}
+.btn.line,.btn.ghost{box-shadow:none}
+.scopebar,.dpsum,.stat,.qcard,.wend,.install,.hud div{border-radius:14px}
+/* the games: cards instead of a bare list */
+.menu{border-top:0;gap:10px}
+.menu button{border:1px solid var(--line);border-radius:14px;background:var(--surface);padding:14px 16px}
+.menu button b{font-family:var(--f-ui);font-size:1.08rem}
+/* the tab bar: a gold mark over the open tab */
+.tabs{border-top:1px solid var(--rule)}
+.tabs button{font-size:.82rem;font-weight:700;position:relative}
+.tabs button i{position:absolute;top:-1px;width:36px;height:3px;border-radius:0 0 3px 3px}
+.tabs button[aria-selected="true"] i{background:var(--gold)}
+:root[data-theme="dark"] .tabs button[aria-selected="true"] i{background:var(--brand)}
+.wt.s-x{background:#8A7B6A;border-color:#8A7B6A}
+.xkb button.k-x{background:#8A7B6A}
+.sheet{background:rgba(30,18,8,.55)}
