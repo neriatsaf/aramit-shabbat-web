@@ -550,3 +550,42 @@ h2,h3{font-family:var(--f-ui);font-weight:700}
 .wt.s-x{background:#8A7B6A;border-color:#8A7B6A}
 .xkb button.k-x{background:#8A7B6A}
 .sheet{background:rgba(30,18,8,.55)}
+/* "איפה בגמרא?": the passage locator */
+.menu button.hot{border:1.5px solid var(--gold);background:linear-gradient(var(--gold-soft),var(--surface) 70%)}
+.menu button.hot b .new{font-style:normal;font-family:var(--f-ui);font-size:.68rem;font-weight:700;color:var(--brand-ink);background:var(--gold);border-radius:6px;padding:1px 6px;margin-inline-start:6px;vertical-align:middle}
+.menu button.busy{opacity:.6;pointer-events:none}
+.menu button em br{display:block}
+.locscore{font-size:.9rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.locscore b{font-family:var(--f-word);font-size:1.35rem;font-weight:900;color:var(--ink)}
+.locbar{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
+.locbar li{height:24px;border-radius:6px;background:var(--soft);color:var(--muted);font-size:.72rem;font-weight:700;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.locbar li.cur{box-shadow:0 0 0 2px var(--brand) inset;color:var(--ink)}
+.locbar li.c-g,.loclist .c-g,.locpts.c-g{background:var(--good);color:#fff}
+.locbar li.c-y,.loclist .c-y,.locpts.c-y{background:var(--gold);color:#fff}
+.locbar li.c-r,.loclist .c-r,.locpts.c-r{background:var(--bad);color:#fff}
+:root[data-theme="dark"] .locbar li.c-g,:root[data-theme="dark"] .locbar li.c-y,:root[data-theme="dark"] .locbar li.c-r,:root[data-theme="dark"] .loclist span,:root[data-theme="dark"] .locpts{color:#1A120B}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .locbar li.c-g,:root:not([data-theme="light"]) .locbar li.c-y,:root:not([data-theme="light"]) .locbar li.c-r,:root:not([data-theme="light"]) .loclist span,:root:not([data-theme="light"]) .locpts{color:#1A120B}}
+.loccard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 16px;min-height:96px;display:grid;place-items:center}
+.loccard .psg{margin:0;font-family:var(--f-word);font-weight:500;font-size:1.28rem;line-height:1.65;text-align:center;text-wrap:pretty}
+.lochd{font-weight:700;font-size:1rem}
+.lochd .muted{font-weight:600;font-size:.85rem;margin-inline-start:6px}
+.lpkgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pkb{display:flex;align-items:center;gap:8px;text-align:start;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:6px 10px;min-height:40px;font-size:.92rem;font-weight:600;line-height:1.2}
+.pkb i{font-style:normal;font-family:var(--f-word);font-weight:700;color:var(--gold);min-width:1.4em;text-align:center}
+.dafgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(52px,1fr));gap:6px}
+.dfb{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;min-height:44px;font-family:var(--f-word);font-weight:700;font-size:1.1rem}
+.pkb.right,.dfb.right{border-color:var(--good);background:var(--good-soft)}
+.pkb.wrong,.dfb.wrong{border-color:var(--bad);background:var(--bad-soft)}
+.pkb[disabled]:not(.right):not(.wrong),.dfb[disabled]:not(.right):not(.wrong){opacity:.55}
+.locres{display:flex;gap:12px;align-items:flex-start;background:var(--soft);border-radius:14px;padding:12px 14px}
+.locres p{margin:4px 0 6px;font-size:.92rem;color:var(--muted)}
+.locpts{flex:none;min-width:46px;height:46px;padding:0 8px;direction:ltr;border-radius:12px;display:grid;place-items:center;font-family:var(--f-word);font-weight:900;font-size:1.1rem}
+.sflink{font-size:.86rem;font-weight:700;color:var(--brand);text-decoration:none}
+.result .big small{font-size:1.3rem;color:var(--muted);font-weight:700}
+.locmeter{width:100%;height:8px}
+.result .locbar{width:100%}
+.loclist{list-style:none;margin:6px 0 0;padding:0;width:100%;text-align:start;display:flex;flex-direction:column;gap:8px}
+.loclist li{display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:8px}
+.loclist span{flex:none;min-width:36px;height:30px;padding:0 4px;border-radius:8px;display:grid;place-items:center;font-weight:800;font-size:.9rem}
+.loclist b{display:block;font-size:.9rem}
+.loclist small{display:block;font-family:var(--f-word);color:var(--muted);font-size:.9rem;line-height:1.5}
