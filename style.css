@@ -305,6 +305,10 @@ body.xwmode .top{display:none}
 .xkb button.k-x{background:#7A8394;color:#FFFFFF;opacity:.75}
 .xkb>div.r2.wide{width:100%}
 .xkb button.enter{font-size:.95rem;font-weight:700}
+/* the Wordle keyboard without final letters: every key keeps one width, so the shorter rows stand centred as on a phone */
+.xkb.nofin>div{width:100%}
+.xkb.nofin button{flex:0 0 calc((100% - 36px) / 9.5)}
+.xkb.nofin button.del{flex:0 0 calc((100% - 36px) / 9.5 * 1.5)}
 .wend{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:4px;text-align:center}
 .wend p{margin:0}
 .wres{font-weight:700}

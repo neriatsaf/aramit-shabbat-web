@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.10';
+const VERSION = '1.6.11';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -2522,6 +2522,11 @@ function wdFor(day, arch) {
   return g;
 }
 function wdSave() { if (wd && wd.arch) return; try { localStorage.setItem(WKEY, JSON.stringify({ day: wd.day, ans: wd.ans, rows: wd.rows, hint: wd.hint, done: wd.done, won: wd.won })); } catch (x) { /* storage blocked */ } }
+/* the hint of the day: the meaning of the word without the word or its root (wdclues.js); the chapter only for a word with none */
+const WDC = window.WD_CLUES || {};
+function wdClue(e) { return WDC[xwSrc(e) + ':' + e.w] || wdChapter(e); }
+/* the Wordle keyboard has no final letters: every letter is typed plain and the last tile shows its final form */
+const WKEYS = XKEYS.map(r => r.replace(/[ךםןףץ]/g, ''));
 function wdChapter(e) {
   if (e.bk) return 'מושג יסוד: ' + ((window.BANK_TOPICS || [])[e.t] || '');
   if (e.xe) return 'מונח כללי בהלכות שבת, לא מפרק אחד';
@@ -2543,12 +2548,12 @@ function renderWordle() {
   g.rows.forEach(w => wdScore(w, g.ans).forEach((v, i) => { const c = w[i]; if (!st[c] || rank[v] > rank[st[c]]) st[c] = v; }));
   const keyCls = ch => { const v = st[norm(ch)]; return v ? ' class="k-' + v + '"' : ''; };
   const end = g.done ? wdEndHtml() : '';
-  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : '') + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז פרק 💡</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
+  view.innerHTML = '<div class="wd"><div class="row between"><b class="wtitle">וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : '') + '</b><span>' + (g.done ? '' : '<button class="link" id="wd-hint"' + (g.hint ? ' disabled' : '') + '>רמז 💡</button> ') + '<button class="link" id="quit">חזרה</button></span></div>' +
     labNavHtml(g, g.ed, 'lw') +
     (g.peek ? '<p class="small wclue labpeek">🛠️ ' + esc(g.e.w) + ' (' + esc(g.ans) + '): ' + esc(getGlossForMode(g.e, 'dictionary')) + '</p>' : '') +
-    (g.hint ? '<p class="small wclue">💡 ' + esc(wdChapter(g.e)) + '</p>' : '') +
+    (g.hint ? '<p class="small wclue">💡 ' + esc(wdClue(g.e)) + '</p>' : '') +
     '<div class="wgrid" id="wd-grid" dir="rtl">' + rows.join('') + '</div>' + end +
-    (g.done ? '' : '<div class="xlow"><div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
+    (g.done ? '' : '<div class="xlow"><div class="xkb nofin" dir="ltr">' + WKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
       (i === 2 ? '<button class="del enter" id="wd-enter">אישור</button>' : '') +
       row.split('').map(ch => '<button data-ch="' + ch + '"' + keyCls(ch) + '>' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="wd-del" aria-label="מחיקה">' + DEL_SVG + '</button>' : '') + '</div>').join('') + '</div></div>') + '</div>';
@@ -2610,7 +2615,7 @@ function wdEndHtml() {
 function wdShareText() {
   const g = wd, link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname), n = streakOf(S.settings.wdDays);
   return shareLines(['פשיטא: הארמית של מסכת שבת', '🟩 וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : ''), '🎯 ניחושים: ' + (g.won ? g.rows.length : 'X') + '/6',
-    '💡 ' + (g.hint ? 'רמזים: 1 (רמז פרק)' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n],
+    '💡 ' + (g.hint ? 'רמזים: 1' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n],
     g.rows.map(w => wdScore(w, g.ans).map(v => ({ g: '🟩', y: '🟨', x: '⬜' })[v]).join(''))));
 }
 /* the streak with its lifelines (🛡️), worked out afresh from the list of solved days, so it never drifts.
@@ -2984,7 +2989,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
 
 /* hardware back button inside the Android app */
 try {
