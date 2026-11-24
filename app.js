@@ -9,9 +9,9 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.9';
+const VERSION = '1.6.10';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
-const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
+const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
    subject and the message ready, naming the board in use */
 const FEEDBACK_EMAIL = 'neriatsaf@gmail.com';
