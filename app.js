@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.2';
+const VERSION = '1.6.3';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -68,7 +68,24 @@ function load() {
       Object.assign(S.settings, raw.settings || {}); S.onboarded = !!raw.onboarded;
       migrate();
     }
+    launchReset(!!raw);
   } catch (e) { /* first run or storage blocked: start clean */ }
+}
+/* the launch to the yeshiva (24.11.2026): progress saved before it is wiped once on each device, so everyone starts
+   together with edition #1. What is kept: the look and study settings and the first opening. What goes: the progress,
+   edits, favourites, mistakes, best scores, streaks and lifelines, the archive marks and a daily board or Wordle in play */
+const RESET_AT = '2026-11-24', RESET_KEY = 'aramit-reset';
+function launchReset(had) {
+  /* the browser tests seed their own saved state; they reach the reset only with ?test&reset */
+  if (/[?&]test\b/.test(location.search) && !/[?&]reset\b/.test(location.search)) return;
+  if (localStorage.getItem(RESET_KEY) === RESET_AT) return;
+  if (had) {
+    S.prog = {}; S.edits = {}; S.best = {}; S.fav = {}; S.miss = {};
+    ['xwDays', 'wdDays', 'xwDaily', 'wdLast', 'arch', 'shieldSeen'].forEach(k => delete S.settings[k]);
+    ['aramit-shabbat-xw', 'aramit-shabbat-wordle'].forEach(k => localStorage.removeItem(k));
+    localStorage.setItem(KEY, JSON.stringify(S));
+  }
+  localStorage.setItem(RESET_KEY, RESET_AT);
 }
 /* spellings merged in a later version: carry the progress and any edited gloss over to the kept entry */
 function migrate() {
@@ -1641,10 +1658,10 @@ function xwFromRefs(R, C, refs) {
   return { R, C, L, K, words };
 }
 /* the daily board: the prepared board for today's edition; after the last board it starts over.
-   The site opens to the yeshiva on LAUNCH: from that day the count starts again at #1, with the first board and the first
+   The site opens to the yeshiva on LAUNCH (moved from 22.11 to 24.11.2026, with a reset of progress, see launchReset): from that day the count starts again at #1, with the first board and the first
    Wordle word of the file. The days before it keep the count of the file (DAILY.epoch), so the boards already played stay
    as they were. The file of the boards itself does not change */
-const LAUNCH = '2026-11-22';
+const LAUNCH = '2026-11-24';
 function xwEpoch(day) { const ep = (window.DAILY && window.DAILY.epoch) || day; return day >= LAUNCH ? LAUNCH : ep; }
 function xwEdition(day) {
   const ep = xwEpoch(day), ms = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
