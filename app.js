@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.13';
+const VERSION = '1.7.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -42,15 +42,17 @@ WORDS.forEach((e, k) => e.k = k); PHRASES.forEach((e, k) => e.k = k);
 const GROUP = new Map();
 (window.GROUPS || []).forEach(g => g.forEach(w => { if (BY.has(w)) GROUP.set(w, g); }));
 const BYDAF = D.slice().sort((x, y) => x.a - y.a || y.c - x.c);
-/* where every deck entry appears: a bitmap of the 312 pages, and a bit per chapter (by the exact passage) */
-(function () {
+/* where every deck entry appears: a bitmap of the 312 pages, and a bit per chapter (by the exact passage).
+   occ.js loads after the first screen (see LAZY below); until then each entry counts only its first page and chapter */
+D.forEach(e => { e.occ = null; e.pkm = 1 << e.pk; });
+function occInit() {
   const raw = window.OCC || [], pkm = window.OCCPK || [];
   D.forEach((e, i) => {
     e.occ = null; e.pkm = Number.isInteger(pkm[i]) ? pkm[i] : (1 << e.pk);
     if (!raw[i]) return;
     try { const b = atob(raw[i]), u = new Uint8Array(b.length); for (let k = 0; k < b.length; k++) u[k] = b.charCodeAt(k); e.occ = u; } catch (err) { /* keep the first page only */ }
   });
-})();
+}
 function occAny(e, a0, a1) {
   if (!e.occ) return e.a >= a0 && e.a <= a1;
   for (let a = a0; a <= a1; a++) if (e.occ[a >> 3] & (1 << (a & 7))) return true;
@@ -67,13 +69,15 @@ const KNOWN_BOX = 4;
 
 /* ---------- state ---------- */
 const KEY = 'aramit-shabbat-v1';
-const S = { prog: {}, edits: {}, fav: {}, miss: {}, settings: { order: 'freq', newPerDay: 10, size: 'm' }, best: {}, onboarded: false };
+/* schemaVersion: 1 (or missing) up to 1.6, the Leitner stages only; 2 from 1.7, every entry also carries its FSRS state (see fsrsOf) */
+const SCHEMA = 2;
+const S = { prog: {}, edits: {}, fav: {}, miss: {}, settings: { order: 'freq', newPerDay: 10, size: 'm' }, best: {}, onboarded: false, schemaVersion: SCHEMA };
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (raw) {
       S.prog = raw.prog || {}; S.edits = raw.edits || {}; S.best = raw.best || {}; S.fav = raw.fav || {}; S.miss = raw.miss || {}; S._cstat = raw.cstat || null;
-      Object.assign(S.settings, raw.settings || {}); S.onboarded = !!raw.onboarded;
+      Object.assign(S.settings, raw.settings || {}); S.onboarded = !!raw.onboarded; S.schemaVersion = raw.schemaVersion || 1;
       migrate();
     }
     launchReset(!!raw);
@@ -113,12 +117,15 @@ function migrate() {
     changed = true;
   }
   delete S._cstat;
+  /* 1.7: the Leitner stages become FSRS states once, on every device. The stage and the day of the next review stay as
+     they were (older versions and the screens keep reading them), so nothing is lost and no review moves */
+  if ((S.schemaVersion || 1) < SCHEMA) { for (const k in S.prog) fsrsOf(S.prog[k]); S.schemaVersion = SCHEMA; changed = true; }
   if (changed) { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
 }
 let ver = 0; /* rises on every save: a panel drawn at an older value may show stale progress */
 /* in a private window or with storage blocked the app keeps working from memory, and says so once */
 let saveWarned = false;
-function save() { ver++; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!saveWarned) { saveWarned = true; toast('לא ניתן לשמור במכשיר הזה (גלישה פרטית?). ההתקדמות תישמר רק עד סגירת הדף'); } } }
+function save() { ver++; mirrorSoon(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!saveWarned) { saveWarned = true; toast('לא ניתן לשמור במכשיר הזה (גלישה פרטית?). ההתקדמות תישמר רק עד סגירת הדף'); } } }
 
 /* ---------- helpers ---------- */
 /* the four main screens live side by side on one rail, and each keeps what it shows until it needs redrawing.
@@ -150,8 +157,31 @@ function bindStars(root, after) {
 }
 function explainHtml(c) { return '<div class="explain"><span class="label">הסבר</span><p class="cfull">' + esc(gloss(c)) + '</p><span class="src">' + esc(cSource(c)) + '</span></div>'; }
 function srcHtml(e) { return e.cn ? '' : '<span class="src">' + esc(countLine(e)) + ' · לראשונה ב' + dafName(e.a) + '</span>'; }
+/* the context sentence of an entry of the chosen store (www/examples.js, loaded only when first needed): a short
+   sentence from the Gemara with the entry marked, and its place. Row: [text, page (0 is ב ע"א), segment of Sefaria,
+   the places of the marked words, cut (1 the start was cut, 2 the end, 3 both)]. Until the file arrives an empty box
+   stands in its place, and fillEx fills every such box once it is there */
+/* examples.js comes through the shared loader of the data files (need, see LAZY) */
+function loadExamples() { return need(['examples']).then(() => { if (!window.EXAMPLES) throw new Error('empty'); return window.EXAMPLES; }); }
+function exRow(e) { const X = window.EXAMPLES; return e && !e.cn && !e.ext && X && Array.isArray(X[e.i]) ? X[e.i] : null; }
+function exInner(r) {
+  const at = new Set(r[3] || []), cut = r[4] | 0;
+  const txt = String(r[0]).split(' ').map((w, i) => at.has(i) ? '<mark>' + esc(w) + '</mark>' : esc(w)).join(' ');
+  return '<span class="label">בגמרא</span><p class="ctxt">' + (cut & 1 ? '...' : '') + txt + (cut & 2 ? '...' : '') + '</p>' +
+    '<span class="src">מסכת שבת, ' + dafName(r[1]) + '</span>';
+}
+function exHtml(e) {
+  if (!e || e.cn || e.ext) return '';
+  const r = exRow(e);
+  if (r) return '<div class="ctx" data-ex="' + e.i + '">' + exInner(r) + '</div>';
+  if (!window.EXAMPLES) loadExamples().then(fillEx).catch(() => { /* offline on a first visit: the card stays without it */ });
+  return '<div class="ctx" data-ex="' + e.i + '" hidden></div>';
+}
+function fillEx() {
+  document.querySelectorAll('.ctx[data-ex]').forEach(el => { if (el.firstChild) return; const r = exRow(D[+el.dataset.ex]); if (r) { el.innerHTML = exInner(r); el.hidden = false; } });
+}
 /* what is shown once an answer is given: the entry and its meaning, and for a concept the full explanation with its source */
-function afterHtml(e) { return e.cn ? '<div class="answer">' + esc(e.w) + ': ' + esc(e.s) + '</div>' + explainHtml(e) : '<div class="answer">' + esc(e.w) + ': ' + esc(gloss(e)) + '</div>' + srcHtml(e); }
+function afterHtml(e) { return e.cn ? '<div class="answer">' + esc(e.w) + ': ' + esc(e.s) + '</div>' + explainHtml(e) : '<div class="answer">' + esc(e.w) + ': ' + esc(gloss(e)) + '</div>' + srcHtml(e) + exHtml(e); }
 function short(e) {
   if (e.cn) return e.s;
   let g = noParens(gloss(e));
@@ -333,20 +363,45 @@ function stats(list) {
 function newToday() { const t = today(); let n = 0; for (const k in S.prog) if (S.prog[k].f === t && !S.prog[k].k) n++; return n; }
 /* r counts the rounds in a row (one a day at most) in which the entry was remembered; at three it becomes known
    and leaves the daily reviews, provided one of them was a free recall (fr: the card turned over, not four answers to pick from).
-   A miss sets the count back to zero */
-const KNOWN_RUN = 3;
+   A miss sets the count back to zero.
+   From 1.7 the next review comes from FSRS (www/fsrs.js): s is the stability in days, df the difficulty (1 to 10), ls the day
+   of the last review. The stage b (0 to 6) and the due day d are kept and follow from the interval, so every screen and
+   older backups go on working. An entry never reaches "known" (stage 4) without at least one free recall on the way,
+   except in the study mode "אמריקאי" (only four answers), where "known" follows the FSRS stability alone */
+const KNOWN_RUN = 3, MAX_IVL = 180;
+const F = window.FSRS || null;
+const r2 = x => Math.round(x * 100) / 100;
+/* the FSRS state of an entry saved by an older version (or marked known, or begun), made from its Leitner stage */
+function fsrsOf(p) {
+  if (!F || !p || (p.s > 0 && p.df >= 1 && p.df <= 10 && Number.isInteger(p.ls))) return p;
+  const c = F.fromLeitner(p.b, p.x, p.n); p.s = r2(c.s); p.df = r2(c.d); if (!(p.ls <= today())) delete p.ls;
+  if (!Number.isInteger(p.ls)) p.ls = Number.isInteger(p.d) ? Math.max(p.f || 0, p.d - INTERVALS[Math.min(6, Math.max(0, p.b | 0))]) : today();
+  return p;
+}
 function grade(e, ok, recall) {
   const k = pid(e), t = today(); const p = S.prog[k] || { b: 0, d: t, n: 0, x: 0, f: t };
+  const first = !(p.s > 0) && !p.n, wasKnown = p.b >= KNOWN_BOX;
   p.n++;
+  if (F) {
+    const c = first ? F.next(null, 0, ok ? 3 : 1) : (fsrsOf(p), F.next({ s: p.s, d: p.df }, t - p.ls, ok ? 3 : 1));
+    p.s = r2(c.s); p.df = r2(c.d); p.ls = t;
+  }
   if (ok) {
-    p.b = Math.min(p.b + 1, 6); p.d = t + INTERVALS[p.b];
     if (p.rd !== t) { p.r = (p.r || 0) + 1; p.rd = t; }
     if (recall) p.fr = 1;
-    if (p.r >= KNOWN_RUN && p.fr && p.b < KNOWN_BOX) { p.b = KNOWN_BOX; p.d = t + INTERVALS[KNOWN_BOX]; }
+    let ivl, b;
+    if (F) { ivl = F.interval(p.s, 0.9, MAX_IVL); b = Math.max(p.b, F.boxOf(ivl)); }
+    else { b = Math.min(p.b + 1, 6); ivl = INTERVALS[b]; }
+    const needRecall = !F || studyMode() !== 'mcq';
+    if (needRecall && !wasKnown && !p.fr && b >= KNOWN_BOX) { b = KNOWN_BOX - 1; ivl = Math.min(ivl, INTERVALS[b]); }
+    if (needRecall && p.r >= KNOWN_RUN && p.fr && b < KNOWN_BOX) { b = KNOWN_BOX; ivl = Math.max(ivl, INTERVALS[KNOWN_BOX]); if (F) p.s = Math.max(p.s, INTERVALS[KNOWN_BOX]); }
+    p.b = b; p.d = t + ivl;
   }
   else { p.x++; p.b = Math.max(0, Math.min(p.b, 1) - 1); p.d = t; p.r = 0; p.rd = t; delete p.fr; }
   S.prog[k] = p; save();
 }
+/* the chance to remember the entry today, by FSRS (null before the first review) */
+function recallNow(e) { const p = S.prog[pid(e)]; if (!F || !p || !p.n) return null; fsrsOf(p); return F.retrievability(today() - p.ls, p.s); }
 function markKnown(e) { const t = today(); S.prog[pid(e)] = { b: KNOWN_BOX, d: t + INTERVALS[KNOWN_BOX], n: 1, x: 0, f: t, k: 1 }; save(); }
 function stageName(e) {
   const p = S.prog[pid(e)]; if (!p) return e.cn ? 'עוד לא נלמד' : 'עוד לא נלמדה';
@@ -594,7 +649,7 @@ function openProgress() {
   const row = (name, list) => { const k = list.filter(isKnown).length; return '<div class="prow"><span>' + esc(name) + '</span><b>' + k + '/' + list.length + '</b><i class="pbar"><i style="width:' + (list.length ? k / list.length * 100 : 0) + '%"></i></i></div>'; };
   const pkRows = list => PEREKS.map((pk, k) => { const l = list.filter(e => e.pk === k); return l.length ? row(ordPk(k) + '. ' + pk[0], l) : ''; }).join('');
   openSheet('<div class="row between"><h2>התקדמות</h2><button class="link" id="pg-close">סגירה</button></div>' +
-    '<p class="small muted">ערך נחשב ידוע כשהגיע לשלב 4 מתוך 6 בלוח החזרות, או כשסומן כידוע.</p>' +
+    '<p class="small muted">ערך נחשב ידוע כשהגיע לשלב 4 מתוך 6 בלוח החזרות' + (studyMode() === 'mcq' ? '' : ' (ולפחות פעם אחת בדרך נזכרת בו בעצמך, בכרטיס שהופכים)') + ', או כשסומן כידוע.</p>' +
     row('מילים וביטויים', D) + (CN.length ? row('מושגים', CN) : '') +
     (CN.length ? '<h3>מושגים לפי נושא</h3>' + TOPICS.map((t, k) => row(t, CN.filter(c => c.t === k))).join('') + '<h3>מושגים לפי פרק</h3>' + pkRows(CN) : '') +
     '<h3>מילים וביטויים לפי פרק</h3><p class="small muted">כל מילה נספרת בפרק שבו היא מופיעה לראשונה.</p>' + pkRows(D));
@@ -625,6 +680,13 @@ function fresh(tab) { const d = drawn[tab]; return !!d && d.ver === ver && !d.su
 function paint(tab) {
   const keepView = view, sub = tab === R.tab ? R.sub : null;
   view = PANEL[tab]; view.className = 'panel'; view.style.paddingBottom = '';
+  const req = lazyFor(tab, sub);
+  if (!lazyHas(req)) {
+    view.innerHTML = '<p class="loading">טוען...</p>'; delete drawn[tab]; view = keepView;
+    need(req).then(() => { if (!drawn[tab] || drawn[tab].ver !== ver) { if (tab === R.tab) render(false); else paint(tab); } },
+      () => { PANEL[tab].innerHTML = '<p class="loading">לא הצלחתי לטעון את הנתונים. בדקו את החיבור לרשת ונסו שוב.</p>'; });
+    return;
+  }
   try {
     if (tab === 'dict') renderDict();
     else if (tab === 'quiz') { if (sub === 'run' && quiz) renderQuiz(); else if (sub === 'done' && quiz) renderQuizDone(); else if (sub === 'review' && quiz) renderQuizReview(); else renderQuizSetup(); }
@@ -662,6 +724,9 @@ function render(keep) {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === lit)));
   const from = shownTab;
   document.body.classList.toggle('xwmode', R.tab === 'xw' && R.sub === 'board');
+  /* a screen with its own keyboard on the bottom edge (the crossword and the Wordle): the gold mark of the open tab would
+     stick out from under the last row of keys, so it is not drawn there (reported 24.11.2026) */
+  document.body.classList.toggle('kbmode', (R.tab === 'xw' && R.sub === 'board') || (R.tab === 'games' && R.sub === 'wordle'));
   if (!(R.tab === 'xw' && R.sub === 'board') && xg && xg.open) { xg.open = false; xwSave(); }
   view = PANEL[R.tab];
   if (!keep || !fresh(R.tab)) { paint(R.tab); if (!keep) view.scrollTop = 0; }
@@ -811,9 +876,9 @@ function dailyCardHtml() {
   const ed = tb ? tb.ed : xwEdition(day);
   return '<div class="hub" id="hub"><p class="hubh">האתגרים של היום</p><div class="hubg">' +
     '<button class="hcard" id="h-xw"><span class="hico xw" aria-hidden="true"><i class="y"></i><i></i><i class="y"></i><i></i><i class="y"></i><i></i><i class="y"></i><i></i><i class="y"></i></span><b>התשחץ היומי #' + ed + '</b>' + (tb ? '<span class="ht">' + esc(tb.theme) + '</span>' : '') +
-      '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + ' <em>🛡️ ' + xi.shields + '/2</em></span></button>' +
+      '<span class="hs' + (d ? ' ok' : '') + '" dir="rtl">' + (d ? 'הושלם ב-' + mmss(d.secs) + ' ✓' : going ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + n + ' <em>🛡️ ' + xi.shields + '/2</em></span>' + shieldMeterHtml(xi, true) + '</button>' +
     '<button class="hcard" id="h-wd"><span class="hico wd" aria-hidden="true"><i class="g"></i><i></i><i class="y"></i><i></i><i class="g"></i></span><b>וורדל #' + ed + '</b><span class="ht">מילה יומית בחמש אותיות</span>' +
-      '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + ' <em>🛡️ ' + wi.shields + '/2</em></span></button>' +
+      '<span class="hs' + (wl && wl.won ? ' ok' : '') + '" dir="rtl">' + (wl ? '\u200f' + (wl.won ? wl.n + '/6 ✓' : 'X/6') : wgo ? 'בתהליך' : 'פתור עכשיו') + '</span><span class="hf" dir="rtl">\u200f🔥 ' + wn + ' <em>🛡️ ' + wi.shields + '/2</em></span>' + shieldMeterHtml(wi, true) + '</button>' +
     '</div><div class="hubx">' + (ed > 1 || BETA ? '<button class="hlink" id="h-arch">ארכיון ‹</button>' : '') + (d && tb ? '<button class="hlink" id="h-share">שתף את התשחץ</button>' : '') + '</div></div>';
 }
 /* where the learner holds in the tractate: a page range (מדף עד דף) chosen in "מה מתרגלים" or in the quiz.
@@ -828,13 +893,18 @@ function holdHtml() {
 function openPrep() {
   const d = SC.d1, ws = D.filter(e => dafNum(e.a) === d).sort((x, y) => x.a - y.a || y.c - x.c), cs = CN.filter(e => dafNum(e.a) === d);
   const row = e => '<div><b>' + esc(e.w) + '</b> <span>' + esc(e.cn ? e.s : gloss(e)) + '</span>' + (e.rare ? ' <span class="rare">נדיר</span>' : '') + '</div>';
+  /* the new words of the page: what is not known yet (never studied, or still on the way), the words first, in the order of the page */
+  const fresh = ws.concat(cs).filter(e => studyOk(e) && !isKnown(e));
   openSheet('<div class="row between"><h2>הכנה לדף ' + esc(gem(d)) + '</h2><button class="link" id="pr-close">סגירה</button></div>' +
     '<p class="small muted">מה שמופיע לראשונה במסכת בדף ' + esc(gem(d)) + ': ' + ws.length + ' מילים וביטויים' + (cs.length ? ' ו-' + cs.length + ' מושגים' : '') + '.</p>' +
     (cs.length ? '<h3>מושגים</h3><div class="review prep">' + cs.map(row).join('') + '</div>' : '') +
     (ws.length ? '<h3>מילים וביטויים</h3><div class="review prep">' + ws.map(row).join('') + '</div>' : '<p>בדף הזה אין מילים חדשות.</p>') +
-    ((ws.length || cs.length) ? '<button class="btn wide" id="pr-go">תרגול מילות הדף (' + (ws.length + cs.length) + ')</button>' : '') +
+    (fresh.length ? '<button class="btn wide" id="pr-new">תרגל את המילים החדשות של הדף (' + fresh.length + ')</button>'
+      : (ws.length || cs.length) ? '<p class="small muted">כל מה שמופיע לראשונה בדף הזה כבר ידוע לך.</p>' : '') +
+    ((ws.length || cs.length) ? '<button class="btn ' + (fresh.length ? 'line' : '') + ' wide" id="pr-go">תרגול כל מילות הדף (' + (ws.length + cs.length) + ')</button>' : '') +
     '<button class="btn line wide" id="pr-scope">שינוי הטווח</button>');
   const pg = $('pr-go'); if (pg) pg.onclick = () => { closeSheet(); startSession('prep', cs.concat(ws).map(e => ({ e, isNew: !S.prog[pid(e)] }))); };
+  const pn = $('pr-new'); if (pn) pn.onclick = () => { closeSheet(); track('prep_new', { daf: d, n: fresh.length }); startSession('prep', fresh.map(e => ({ e, isNew: !S.prog[pid(e)] }))); };
   $('pr-close').onclick = closeSheet;
   $('pr-scope').onclick = () => { closeSheet(); openScope(renderLearn); };
 }
@@ -853,7 +923,7 @@ function renderLearn() {
     '<div class="legend"><span style="--c:var(--good)">ידועים ' + seg[3][1] + '</span><span style="--c:var(--brand)">בתהליך ' + seg[2][1] + '</span><span style="--c:var(--gold)">בתחילת הדרך ' + seg[1][1] + '</span><span style="--c:var(--line)">עוד לא נלמדו ' + st.fresh + '</span></div>' +
     '<button class="link start" id="pg-open">פירוט ההתקדמות לפי פרקים ונושאים</button></div>' : '') +
     (drill ? '<p class="note">' + (SC.by === 'fav' ? 'תרגול של הערכים שסימנת בכוכב.' : 'תרגול של הערכים שטעית בהם. ערך יוצא מהרשימה אחרי שתי תשובות נכונות ברצף.') + ' תשובה נכונה כאן לא משנה את לוח החזרות, וטעות מחזירה את הערך להתחלה.</p>' :
-    '<p class="small muted">תשובה נכונה מרחיקה את החזרה הבאה: יום, שלושה ימים, שבוע, שבועיים, חודש וחודשיים. טעות מחזירה את הערך להתחלה.</p>');
+    '<p class="small muted">תשובה נכונה מרחיקה את החזרה הבאה לפי כמה הערך כבר יציב אצלך בזיכרון, מיום אחד ועד חצי שנה. טעות מחזירה את הערך להתחלה. ' + (studyMode() === 'mcq' ? 'ערך נחשב ידוע כשהוא יציב אצלך בזיכרון שבועיים ומעלה.' : 'ערך נחשב ידוע רק אחרי שזכרת אותו בעצמך לפחות פעם אחת, בכרטיס שהופכים.') + '</p>');
   view.insertAdjacentHTML('afterbegin', dailyCardHtml() + holdHtml()); $('h-xw').onclick = startXWDaily; $('h-wd').onclick = startWordle;
   /* on the first day there is nothing in the archive yet */
   if ($('h-arch')) $('h-arch').onclick = openArchive;
@@ -878,13 +948,13 @@ function buildQueue(kind) {
   return shuffle(list.filter(isDue)).map(e => ({ e, isNew: false })).concat(freshList(room).map(e => ({ e, isNew: true })));
 }
 function startSession(kind, list) {
-  const q = list || buildQueue(kind);
+  const q = groupQueue(list || buildQueue(kind));
   if (!q.length) {
     if (kind) { toast(kind === 'free' ? 'עוד לא למדת ערכים מהבחירה הזו' : 'כל הערכים בבחירה הזו כבר נלמדו'); return; }
     if (drillScope()) { toast('הרשימה ריקה'); return; }
     nav('learn', 'more', R.sub === 'done' || R.sub === 'review'); return;
   }
-  session = { kind: kind || (drillScope() ? 'free' : 'due'), queue: q, pos: 0, right: 0, wrong: 0, stage: 'ask', picked: null, mode: null, q: null, missed: [], review: null, list: list ? list.map(x => x.e) : null };
+  session = { kind: kind || (drillScope() ? 'free' : 'due'), queue: q, pos: 0, right: 0, wrong: 0, stage: 'ask', picked: null, mode: null, q: null, missed: [], review: null, list: list ? q.map(x => x.e) : null };
   nav('learn', 'session', R.sub === 'more' || R.sub === 'done' || R.sub === 'review');
 }
 function renderMore() {
@@ -899,9 +969,25 @@ function renderMore() {
   $('free').onclick = () => startSession('free');
   $('back').onclick = goBack;
 }
-function pickMode(item) {
-  if (item.isNew) return { type: 'intro' };
-  return { type: Math.random() < 0.55 ? 'mcq' : 'flip' };
+/* how a review is asked, by the setting "אופן התרגול בלימוד" (S.settings.smode): 'mix' (the default) by the FSRS
+   stability, below 3 days four answers to pick from and from 3 days a turned card; 'flip' always a turned card;
+   'mcq' always four answers. In 'mix' a card one step before known with no free recall yet is turned, so the step can be taken */
+const SMODES = ['mix', 'flip', 'mcq'], MIX_S = 3;
+function studyMode() { return SMODES.indexOf(S.settings.smode) >= 0 ? S.settings.smode : 'mix'; }
+function planMode(item) {
+  if (item.isNew) return 'intro';
+  const m = studyMode(); if (m !== 'mix') return m;
+  const p = S.prog[pid(item.e)]; if (!p) return 'mcq';
+  if (!p.fr && p.b < KNOWN_BOX && (p.b >= KNOWN_BOX - 1 || (p.r || 0) >= KNOWN_RUN - 1)) return 'flip';
+  fsrsOf(p);
+  return (p.s > 0 ? p.s : INTERVALS[Math.min(6, p.b | 0)]) >= MIX_S ? 'flip' : 'mcq';
+}
+function pickMode(item) { return { type: planMode(item) }; }
+/* in 'mix' the round keeps one kind together: the turned cards first, then the questions with four answers and the new entries */
+function groupQueue(q) {
+  if (studyMode() !== 'mix') return q;
+  const rank = { flip: 0, mcq: 1, intro: 2 };
+  return q.map((x, i) => [rank[planMode(x)], i, x]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(a => a[2]);
 }
 function wordCls(t) { return 'word' + (t.length > 14 ? ' md' : ''); }
 function renderSession() {
@@ -924,13 +1010,13 @@ function renderSession() {
       ? '<span class="tag">מושג חדש, ' + esc(TOPICS[e.t]) + '</span><div class="' + wordCls(e.w) + '">' + esc(e.w) + '</div><div class="answer">' + esc(e.s) + '</div>' + explainHtml(e) +
         '<div class="two"><button class="btn ghost" id="known">כבר מכיר ✓</button><button class="btn" id="learn">ללמוד אותו</button></div>'
       : '<span class="tag">מילה חדשה</span><div class="' + wordCls(e.w) + '">' + esc(e.w) + '</div>' +
-        '<div class="answer">' + esc(gloss(e)) + '</div>' + (e.v.length ? '<span class="src">' + esc(altLine(e)) + '</span>' : '') + srcHtml(e) +
+        '<div class="answer">' + esc(gloss(e)) + '</div>' + (e.v.length ? '<span class="src">' + esc(altLine(e)) + '</span>' : '') + srcHtml(e) + exHtml(e) +
         '<div class="two"><button class="btn ghost" id="known">כבר מכיר ✓</button><button class="btn" id="learn">ללמוד אותה</button></div>';
   } else if (m.type === 'flip') {
     const front = s.rev ? '<span class="tag">' + (cn ? 'איזה מושג מתאים להגדרה?' : 'איזו מילה מתאימה לפירוש?') + '</span><div class="word sm">' + esc(cn ? e.s : gloss(e)) + '</div>'
                         : '<span class="tag">' + (cn ? 'מה פירוש המושג?' : 'מה הפירוש?') + '</span><div class="' + wordCls(e.w) + '">' + esc(e.w) + '</div>';
     const back = cn ? '<div class="answer">' + (s.rev ? '<span class="word md">' + esc(e.w) + '</span>' : esc(e.s)) + '</div>' + explainHtml(e)
-                    : '<div class="answer">' + (s.rev ? '<span class="word md">' + esc(e.w) + '</span>' : esc(gloss(e))) + '</div>' + srcHtml(e);
+                    : '<div class="answer">' + (s.rev ? '<span class="word md">' + esc(e.w) + '</span>' : esc(gloss(e))) + '</div>' + srcHtml(e) + exHtml(e);
     inner = front + (s.stage === 'ask' ? '<button class="btn wide" id="show">הצגת התשובה</button>'
       : back + '<div class="two"><button class="btn bad" id="no">לא ידעתי</button><button class="btn good" id="yes">ידעתי</button></div>') +
       '<div class="knownrow"><button class="link" id="known">כבר מכיר ✓</button></div>';
@@ -1276,7 +1362,8 @@ function dictMore() {
 }
 function detailHtml(e) {
   const p = S.prog[e.w];
-  let h = '<div class="detail"><p class="small muted">' + esc(countLine(e)) + '. לראשונה ב' + dafName(e.a) + '.</p><p class="small muted">' + esc(stageName(e)) + '</p>';
+  const rc = recallNow(e);
+  let h = '<div class="detail"><p class="small muted">' + esc(countLine(e)) + '. לראשונה ב' + dafName(e.a) + '.</p><p class="small muted">' + esc(stageName(e)) + (rc === null ? '' : '. סיכוי לזכור היום: ' + Math.round(rc * 100) + '%') + '</p>' + exHtml(e);
   if (dict.editing) {
     h += '<div class="field"><label for="ded">הפירוש שלך (נשמר רק במכשיר הזה)</label><textarea id="ded">' + esc(gloss(e)) + '</textarea></div>' +
       '<div class="row"><button class="btn" id="dsave">שמירה</button><button class="btn ghost" id="dcancel">ביטול</button>' +
@@ -1318,6 +1405,11 @@ function lenCard(n, noun) {
     (n && n < quizCfg.len ? '<p class="small muted">בבחירה הזו יש ' + noun(n) + ', וזה יהיה אורך החידון.</p>' : ''));
 }
 function renderQuizSetup() {
+  if (quizCfg.mode === 'content' && !lazyHas(['content'])) {
+    const v = view; v.innerHTML = '<p class="loading">טוען...</p>';
+    need(['content']).then(() => { if (R.tab === 'quiz' && !R.sub) { const k = view; view = v; try { renderQuizSetup(); } finally { view = k; } } }, () => { v.innerHTML = '<p class="loading">לא הצלחתי לטעון את הנתונים. בדקו את החיבור לרשת ונסו שוב.</p>'; });
+    return;
+  }
   if (quizCfg.mode === 'content' && CT.length) return renderTQSetup();
   if (SC.kind === 'both') { SC.kind = 'words'; saveSc(); }
   const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + 'mid', b = S.best[key];
@@ -1385,9 +1477,14 @@ function renderQuizReview() {
 }
 
 /* ---------- content quiz: questions on the course of the sugyot ---------- */
-const CTOPICS = (window.CTOPICS || []).map(t => Array.isArray(t) ? { n: t[0], pk: t[1] } : { n: t, pk: -1 });
-const CT = (window.CQ || []).map((r, i) => ({ i, a: r[0], t: r[1], lv: r[2], q: r[3], ans: r[4], dis: [r[5], r[6], r[7]], quote: r[8], src: r[9], basis: r[10], note: r[11], pk: Number.isInteger(r[12]) ? r[12] : pkOf(r[0]) }));
-const CT_D0 = CT.length ? dafNum(Math.min.apply(null, CT.map(x => x.a))) : 2, CT_D1 = CT.length ? dafNum(Math.max.apply(null, CT.map(x => x.a))) : 2;
+/* content.js loads when the content quiz is first needed (see LAZY below) */
+let CTOPICS = [], CT = [], CT_D0 = 2, CT_D1 = 2;
+function ctInit() {
+  CTOPICS = (window.CTOPICS || []).map(t => Array.isArray(t) ? { n: t[0], pk: t[1] } : { n: t, pk: -1 });
+  CT = (window.CQ || []).map((r, i) => ({ i, a: r[0], t: r[1], lv: r[2], q: r[3], ans: r[4], dis: [r[5], r[6], r[7]], quote: r[8], src: r[9], basis: r[10], note: r[11], pk: Number.isInteger(r[12]) ? r[12] : pkOf(r[0]) }));
+  CT_D0 = CT.length ? dafNum(Math.min.apply(null, CT.map(x => x.a))) : 2; CT_D1 = CT.length ? dafNum(Math.max.apply(null, CT.map(x => x.a))) : 2;
+  restoreTq();
+}
 const TQ = { by: 'all', topic: -1, d0: CT_D0, d1: CT_D1, pereks: [] };
 function saveTq() { S.settings.tq = { by: TQ.by, topic: TQ.topic, d0: TQ.d0, d1: TQ.d1, pereks: TQ.pereks.slice() }; save(); }
 function restoreTq() {
@@ -1397,7 +1494,8 @@ function restoreTq() {
   TQ.topic = Number.isInteger(c.topic) && c.topic >= 0 && c.topic < CTOPICS.length ? c.topic : -1;
   TQ.d0 = Number.isInteger(c.d0) && c.d0 >= CT_D0 && c.d0 <= CT_D1 ? c.d0 : CT_D0;
   TQ.d1 = Number.isInteger(c.d1) && c.d1 >= TQ.d0 && c.d1 <= CT_D1 ? c.d1 : CT_D1;
-  quizCfg.mode = S.settings.qmode === 'content' && CT.length ? 'content' : 'lex';
+  /* before content.js has loaded, a content quiz chosen last time stays chosen; the screen waits for the file */
+  quizCfg.mode = S.settings.qmode === 'content' && (CT.length || !lazyHas(['content'])) ? 'content' : 'lex';
 }
 function tqWhere(x) { return TQ.by === 'perek' ? (!TQ.pereks.length || TQ.pereks.indexOf(x.pk) >= 0) : TQ.by === 'topic' ? (TQ.topic < 0 || x.t === TQ.topic) : TQ.by === 'daf' ? (dafNum(x.a) >= TQ.d0 && dafNum(x.a) <= TQ.d1) : true; }
 function tqItems() { return CT.filter(tqWhere); }
@@ -1406,7 +1504,7 @@ function ctSource(x) { return ['גמרא', 'משנה', 'משנה וגמרא'][x.
 /* the switch at the top of the quiz screen: the three stores of the lexicon, and the content of the sugya */
 function modeSeg() {
   const cur = quizCfg.mode === 'content' ? 'content' : SC.kind;
-  const opts = [['words', KINDS.words]].concat(CN.length ? [['concepts', KINDS.concepts]] : [], CT.length ? [['content', 'תוכן הסוגיה']] : []);
+  const opts = [['words', KINDS.words]].concat(CN.length ? [['concepts', KINDS.concepts]] : [], CT.length || !lazyHas(['content']) ? [['content', 'תוכן הסוגיה']] : []);
   return opts.length > 1 ? qCard('על מה החידון', '<div class="seg" id="qmode">' + opts.map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>').join('') + '</div>') : '';
 }
 function bindMode() {
@@ -1790,7 +1888,9 @@ let xg = null;
 const XE = ((window.DAILY && window.DAILY.extra) || []).map((x, i) => ({ xe: true, w: x[0], s: x[1], m0: x[2], i }));
 /* the crossword bank (bank.js): terms of the Torah world for the crosswords only, handled like the added terms:
    a short definition for the cell, a full explanation for the summary, and no place in the dictionary, the learning or the Wordle */
-const BK = (window.BANK || []).map((r, i) => ({ xe: true, bk: true, w: r[0], t: r[1], s: r[2], m0: r[3], i }));
+/* bank.js and xwclues.js load after the first screen (see LAZY below); the crossword and the Wordle wait for them */
+let BK = [];
+function bankInit() { BK = (window.BANK || []).map((r, i) => ({ xe: true, bk: true, w: r[0], t: r[1], s: r[2], m0: r[3], i })); WDICT = null; }
 function xwEntry(src, i) { return src === 'c' ? CN[i] : src === 'x' ? XE[i] : src === 'b' ? BK[i] : D[i]; }
 function xwSrc(e) { return e.cn ? 'c' : e.bk ? 'b' : e.xe ? 'x' : 'd'; }
 function xwLetters(s) { return String(s).replace(/[\u0591-\u05C7]/g, '').replace(/[^\u05d0-\u05ea]/g, ''); }
@@ -1799,7 +1899,7 @@ function xwAns(e) { return norm(xwLetters(e.w)).split(''); }
 function xwSplit(e) { const p = e.w.trim().split(/\s+/); return p.length > 1 ? ' (' + p.map(x => xwLetters(x).length).join(', ') + ')' : ''; }
 /* a definition rewritten for the crossword (xwclues.js) replaces one that shows the answer or is too short to solve;
    the dictionary keeps the original */
-const XWC = window.XW_CLUES || {};
+let XWC = {};
 function xwOv(e) { return XWC[xwSrc(e) + ':' + e.w]; }
 function xwClue(e) { return getGlossForMode(e, 'crossword') + xwSplit(e); }
 function xwDef(e) { return (xwOv(e) || (e.cn || e.xe ? e.s : gloss(e))) + xwSplit(e); }
@@ -1916,10 +2016,22 @@ function rootLeak(ans, clue) {
 /* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
    No levels (24.11.2026): from the whole store only the chosen store, without the rare words of the expanded store */
 /* a word that is not clean (a prefix, the same as in Hebrew, a letter's name) is never asked for (XW_SKIP, tools/make-xwskip.js) */
-const XW_SKIP = new Set(window.XW_SKIP || []);
+let XW_SKIP = new Set();
 const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return !XW_SKIP.has(xwSrc(e) + ':' + e.w) && t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
-const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && !(e.ext && /בעל כמה פירושים/.test(e.m0)) && xwOk(e, e.cn ? e.s : short(e), 34));
-BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && xwOk(e, e.s, 40)) XW_ALL.push(e); });
+let XW_ALL = [], XW_TWO = [];
+/* the crossword pools, once bank.js and xwclues.js are in */
+function xwInit() {
+  XWC = window.XW_CLUES || {}; XW_SKIP = new Set(window.XW_SKIP || []);
+  XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && !(e.ext && /בעל כמה פירושים/.test(e.m0)) && xwOk(e, e.cn ? e.s : short(e), 34));
+  BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && xwOk(e, e.s, 40)) XW_ALL.push(e); });
+  XW_TWO = WORDS.filter(e => XW_TWO_OK.has(e.w) && xwOk(e, e.cn ? e.s : short(e), 34));
+  BK.forEach(e => { if (XW_TWO_OK.has(e.w) && xwOk(e, e.s, 40)) XW_TWO.push(e); });
+}
+/* two-letter answers, for the rectangular personal board only (decided with the owner 24.11.2026): a short board of a single
+   chapter rarely fills without them. Only clean, real words: no prefix (ב ל ד ו), no letter name (מם), nothing that is the
+   same as in Hebrew and presented as Aramaic (לה, כי), and no bare particle (קא). The old 9x9 generator keeps 3 to 7 letters */
+const XW_TWO_OK = new Set(['בר', 'הא', 'אי', 'מי', 'מר', 'בי', 'חד', 'תא', 'נח', 'דא', 'תו', 'הך', 'הי', 'דל', 'חש', 'שב', 'הב',
+  'קב', 'קש', 'דף', 'פך', 'סם', 'טס', 'עף', 'סל', 'גץ', 'כס', 'רז', 'טב', 'רב', 'שס', 'רן', 'טז', 'שך']);
 const xwCfg = { src: 'all', pereks: [] };
 function restoreXw() {
   const c = S.settings.xw || {};
@@ -1935,7 +2047,13 @@ function xwSrcOk(e, k) {
   if (xwCfg.src === 'pk') return k === undefined ? (!xwCfg.pereks.length || xwCfg.pereks.some(p => e.pkm & (1 << p))) : !!(e.pkm & (1 << k));
   return true;
 }
-function xwPool() { return XW_ALL.filter(e => xwSrcOk(e) && (SC.by !== 'daf' || xwCfg.src !== 'all' || (!e.bk && inScope(e)))); }
+function xwPoolOf(list) { return list.filter(e => xwSrcOk(e) && (SC.by !== 'daf' || xwCfg.src !== 'all' || (!e.bk && inScope(e)))); }
+function xwPool() { return xwPoolOf(XW_ALL); }
+/* the pool of the rectangular board (xw-worker.js): the same choice, with the clean two-letter words, in the form the worker
+   takes. m keeps two entries of one meaning (אית and איכא) off the same board, as sameMeaning does for the old generator */
+function xwRectPool() {
+  return xwPoolOf(XW_ALL.concat(XW_TWO)).map(e => ({ s: xwSrc(e), i: e.i, w: e.w, clue: xwDef(e), m: e.bk ? '' : bare(short(e)) }));
+}
 
 /* where a word sits: its cells in reading order, and the cell before its start and after its end */
 function xwCells(t, cr, cc, n) {
@@ -2113,19 +2231,85 @@ function renderXWSetup() {
   const rs = $('xw-resume'); if (rs) rs.onclick = () => { const sv = xwLoad(); if (sv) xwOpen(sv); else { toast('הלוח השמור לא נמצא'); renderXWSetup(); } };
 }
 const XW_MIN_POOL = 25;
+/* a personal board: first a full rectangular board with no empty cell (7 by 6, then 6 by 5, then 5 by 5), filled by
+   xw-worker.js in the background so the screen never freezes; the worker script loads on the first personal board.
+   When no rectangle fills within 2.5 seconds (a very narrow choice, an old browser without workers), the old 9x9
+   generator takes over, as before */
+function xwBusyUi(on) {
+  const b = $('xw-go'); if (b) { b.disabled = on || xwPool().length < XW_MIN_POOL; b.classList.toggle('busy', on); b.textContent = on ? 'בונה לוח מלבני...' : 'התחל תשחץ'; }
+  const n = $('xw-new'); if (n) n.disabled = on;
+}
 function startXW() {
+  if (lazyWait(XWN, startXW)) return;
   const src = xwPool();
   if (src.length < XW_MIN_POOL) { toast('צריך לפחות ' + XW_MIN_POOL + ' מילים כדי לבנות לוח. כדאי להרחיב את הבחירה'); return; }
   if (xwBusy) return;
-  xwBusy = true; toast('בונה לוח...');
-  const from = R.tab + '/' + R.sub;
-  xwBuild(src, b => {
-    xwBusy = false;
+  xwBusy = true; toast('בונה לוח מלבני...'); xwBusyUi(true);
+  const from = R.tab + '/' + R.sub, t0 = Date.now();
+  const open = b => { xwBusy = false; xwBusyUi(false); const t = $('toast'); if (t) t.hidden = true; xwOpen(xwGame(b)); };
+  const old = () => xwBuild(src, b => {
+    xwBusy = false; xwBusyUi(false);
     if (R.tab + '/' + R.sub !== from) return;   /* moved elsewhere meanwhile */
     if (!b || b.words.length < 13) { toast('לא הצלחתי לבנות לוח של 13 מילים לפחות מהבחירה הזו. כדאי להרחיב אותה'); return; }
-    const t = $('toast'); if (t) t.hidden = true;
-    xwOpen(xwGame(b));
+    track('xw_personal', { kind: 'old', ms: Date.now() - t0 });
+    open(b);
   });
+  loadScript('xw-worker.js').then(() => window.XWRect ? window.XWRect.build(xwRectPool(), { ms: 2500 }) : null, () => null).then(r => {
+    if (R.tab + '/' + R.sub !== from) { xwBusy = false; xwBusyUi(false); return; }
+    const b = r && xwFromRefs(r.R, r.C, r.words);
+    if (!b) { toast('בונה לוח...'); old(); return; }
+    track('xw_personal', { kind: r.size, ms: Date.now() - t0 });
+    open(b);
+  });
+}
+/* a script loaded on demand, once: the same promise for every caller. A failure (offline before the file was cached) is
+   not kept, so the next call tries again */
+const SCRIPTS = {};
+function loadScript(src) {
+  if (SCRIPTS[src]) return SCRIPTS[src];
+  return (SCRIPTS[src] = new Promise((ok, fail) => {
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    s.onload = () => ok(); s.onerror = () => { delete SCRIPTS[src]; s.remove(); fail(new Error('load ' + src)); };
+    document.head.appendChild(s);
+  }));
+}
+/* ---------- data files loaded after the first screen (1.7) ----------
+   index.html loads only what the first screen needs (the dictionary, the concepts, the daily boards, the Wordle hints).
+   The rest is fetched on demand, from the offline cache once the site was visited:
+   occ.js (where each entry appears) and bank.js with xwclues.js (the crossword) start right after the first screen is
+   drawn; content.js (the content quiz) and examples.js (the context sentences) wait until a screen asks for them.
+   A screen that needs a file not yet in shows "טוען..." and draws itself when it arrives. need() can be called from
+   anywhere: one promise per file, and the file's own set-up runs once */
+const LAZY = { occ: ['occ.js', occInit], bank: ['bank.js', bankInit], xwclues: ['xwclues.js', null], content: ['content.js', ctInit], examples: ['examples.js', null] };
+const LAZY_IN = new Set(), XWN = ['bank', 'xwclues'];
+/* a file already in the page (an older index.html still in a cache, or a test that put it there) counts as loaded */
+const LAZY_GLOBAL = { occ: 'OCC', bank: 'BANK', xwclues: 'XW_CLUES', content: 'CQ', examples: 'EXAMPLES' };
+function lazyHas(names) { return names.every(n => LAZY_IN.has(n)); }
+function lazyMark(n) {
+  if (LAZY_IN.has(n)) return;
+  LAZY_IN.add(n); if (LAZY[n][1]) LAZY[n][1]();
+  if (n === 'bank' || n === 'xwclues') { if (lazyHas(XWN)) xwInit(); }
+  ver++;   /* every panel drawn before is redrawn when next shown */
+}
+function need(names) {
+  return Promise.all(names.map(n => LAZY_IN.has(n) ? null : (window[LAZY_GLOBAL[n]] ? (lazyMark(n), null) : loadScript(LAZY[n][0]).then(() => lazyMark(n)))));
+}
+/* the start of an action that needs a file: when it is not in yet, the action runs again once it is. Returns true when it waits */
+function lazyWait(names, fn, args) {
+  if (lazyHas(names)) return false;
+  toast('טוען...');
+  need(names).then(() => { const t = $('toast'); if (t && t.textContent === 'טוען...') t.hidden = true; fn.apply(null, args || []); }, () => toast('לא הצלחתי לטעון את הנתונים. בדקו את החיבור לרשת ונסו שוב'));
+  return true;
+}
+/* what each screen needs before it can be drawn */
+function lazyFor(tab, sub) {
+  const narrow = SC.by === 'perek' || SC.by === 'daf';
+  if (tab === 'xw') return XWN;
+  if (tab === 'games') return sub === 'wordle' ? ['bank'] : sub && sub.indexOf('loc') !== 0 && narrow ? ['occ'] : [];
+  if (tab === 'quiz') return (quizCfg.mode === 'content' ? ['content'] : []).concat(narrow ? ['occ'] : []);
+  if (tab === 'dict') return ['occ'];
+  if (tab === 'learn' && sub) return narrow ? ['occ'] : [];
+  return [];
 }
 /* the daily board: all words, the same for everyone on the same date */
 /* a daily board left open past midnight: it is closed, so the day that ended keeps its record and today starts clean */
@@ -2138,9 +2322,10 @@ function nowEd() { const day = localDay(); return BETA && day < LAUNCH ? 0 : xwE
 function archMax() { return BETA && window.DAILY ? window.DAILY.boards.length : xwEdition(localDay()) - 1; }
 function archTag(n) { const ed = nowEd(); return n > ed ? '<span class="atag fut">עתידי</span>' : n === ed ? '<span class="atag now">היום</span>' : ''; }
 /* an edition of the archive; in the beta, today's edition and the coming ones are a look only: nothing of them is recorded */
-function openArchXW(n) { const dd = edDay(n), bd = xwDailyBoard(dd); if (!bd) return; const g = xwGame(bd); g.arch = dd; g.lab = BETA && n >= nowEd(); xwOpen(g); }
-function openArchWD(n) { const g = wdFor(edDay(n), true); if (!g) return; g.lab = BETA && n >= nowEd(); wd = g; if (R.tab === 'games' && R.sub === 'wordle') renderWordle(); else nav('games', 'wordle'); }
+function openArchXW(n) { if (lazyWait(XWN, openArchXW, [n])) return; const dd = edDay(n), bd = xwDailyBoard(dd); if (!bd) return; const g = xwGame(bd); g.arch = dd; g.lab = BETA && n >= nowEd(); xwOpen(g); }
+function openArchWD(n) { if (lazyWait(XWN, openArchWD, [n])) return; const g = wdFor(edDay(n), true); if (!g) return; g.lab = BETA && n >= nowEd(); wd = g; if (R.tab === 'games' && R.sub === 'wordle') renderWordle(); else nav('games', 'wordle'); }
 function openArchive() {
+  if (lazyWait(XWN, openArchive)) return;
   const ed = nowEd(), arch = S.settings.arch || { xw: {}, wd: {} }, rows = [], max = archMax();
   const order = []; if (BETA) for (let n = 1; n <= max; n++) order.push(n); else for (let n = max; n >= 1; n--) order.push(n);
   order.forEach(n => {
@@ -2177,6 +2362,7 @@ function bindLabNav(g, ed, open, repaint, p) {
   $(p + '-peek').onclick = () => { g.peek = !g.peek; repaint(); };
 }
 function startXWDaily() {
+  if (lazyWait(XWN, startXWDaily)) return;
   const day = localDay(), saved = xwLoad();
   if (saved && saved.day === day && saved.b.anchor) { xwOpen(saved); return; }
   const b = xwDailyBoard(day);
@@ -2591,6 +2777,7 @@ function xwSummary() {
     '<div class="stats"><div class="stat"><b>' + mmss(g.secs || 0) + '</b><span>זמן</span></div><div class="stat"><b>' + g.b.words.length + '</b><span>מילים</span></div><div class="stat"><b>' + h + '</b><span>רמזים</span></div></div>' +
     (wrong ? '<p class="small strong">יש בלוח ' + nWrongCells(wrong) + '. בדיקת שגיאות תסמן ' + (wrong === 1 ? 'אותה' : 'אותן') + '.</p>' : '') +
     (g.b.anchor ? '<p class="small muted">' + esc('#' + g.b.ed + ', ' + g.b.theme) + '</p>' : '') +
+    (g.done && g.day && g.b.anchor && !g.arch ? streakLineHtml(xwStreakInfo(), 'הרצף בתשחץ היומי') : '') +
     '<div class="review xwlist">' + words.map(w => '<div' + (g.b.anchor && w === g.b.words[0] ? ' class="anc"' : '') + '><b>' + esc(w.e.w) + '</b> <span>' + esc(xwDef(w.e)) + '</span>' + xwMore(w.e) + '</div>').join('') + '</div>' +
     (g.done ? '<button class="btn wide" id="xs-new">לוח חדש</button>' : '<button class="btn wide" id="xs-back">חזרה ללוח</button>') +
     '<button class="btn line wide" id="xs-share">שתף תוצאה</button>' +
@@ -2631,10 +2818,44 @@ document.addEventListener('visibilitychange', () => {
   if (drawn[R.tab] && drawn[R.tab].day !== localDay() && !sheetOpen) render(false);
   if (!NATIVE && 'serviceWorker' in navigator && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then(r => { if (r) r.update(); }).catch(() => { /* offline */ });
 });
+/* a physical keyboard (1.7). A Hebrew letter is taken as typed; with the keyboard on English the key is read by its place,
+   as the standard Hebrew layout puts it (E is ק, T is א), so no switching is needed on a computer */
+const KEY_HE = { KeyE: 'ק', KeyR: 'ר', KeyT: 'א', KeyY: 'ט', KeyU: 'ו', KeyI: 'ן', KeyO: 'ם', KeyP: 'פ', KeyA: 'ש', KeyS: 'ד', KeyD: 'ג', KeyF: 'כ',
+  KeyG: 'ע', KeyH: 'י', KeyJ: 'ח', KeyK: 'ל', KeyL: 'ך', Semicolon: 'ף', KeyZ: 'ז', KeyX: 'ס', KeyC: 'ב', KeyV: 'ה', KeyB: 'נ', KeyN: 'מ', KeyM: 'צ', Comma: 'ת', Period: 'ץ' };
+function keyLetter(ev) {
+  if (/^[א-ת]$/.test(ev.key)) return ev.key;
+  return /^[a-zA-Z;,.]$/.test(ev.key) && KEY_HE[ev.code] ? KEY_HE[ev.code] : '';
+}
+/* the crossword: arrows move the cursor to the next letter cell that way (the board runs right to left), Enter or Tab go to
+   the next open word (Shift goes back), Space turns the direction on a crossing, ⌫ and Delete erase */
+function xwArrow(dr, dc) {
+  const g = xg, b = g.b, r0 = Math.floor(g.cur / b.C), c0 = g.cur % b.C;
+  for (let r = r0 + dr, c = c0 + dc; r >= 0 && c >= 0 && r < b.R && c < b.C; r += dr, c += dc) {
+    const k = r * b.C + c; if (!b.L[k]) continue;
+    const ws = g.cw[k], h = dc !== 0;
+    if (ws.indexOf(g.act) < 0 || b.words[g.act].h !== h) { const same = ws.find(i => b.words[i].h === h); g.act = same !== undefined ? same : ws.indexOf(g.act) >= 0 ? g.act : ws[0]; }
+    g.cur = k; g._tp = null; xwPaint(); xwSave(); return;
+  }
+}
+function xwWordStep(back) {
+  const g = xg, ws = g.b.words, n = ws.length;
+  if (!back) { if (!xwNextOpen()) return; }
+  else for (let d = 1; d < n; d++) { const i = (g.act - d + n) % n, w = ws[i]; if (xwSolved(w)) continue; const k = w.cells.find(c => !g.typed[c] && !xwLocked(c)); g.act = i; g.cur = k !== undefined ? k : w.cells[0]; break; }
+  g._tp = null; xwPaint(); xwSave();
+}
 document.addEventListener('keydown', ev => {
   if (!(R.tab === 'xw' && R.sub === 'board' && xg && xg.type === 'xw') || sheetOpen || ev.ctrlKey || ev.metaKey || ev.altKey) return;
-  if (ev.key === 'Backspace') { ev.preventDefault(); xwDel(); }
-  else if (/^[א-ת]$/.test(ev.key)) { ev.preventDefault(); xwType(ev.key); }
+  if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
+  const ch = keyLetter(ev), k = ev.key;
+  if (k === 'Backspace' || k === 'Delete') { ev.preventDefault(); xwDel(); }
+  else if (ch) { ev.preventDefault(); xwType(ch); }
+  else if (xg.done) return;
+  else if (k === 'ArrowRight') { ev.preventDefault(); xwArrow(0, -1); }
+  else if (k === 'ArrowLeft') { ev.preventDefault(); xwArrow(0, 1); }
+  else if (k === 'ArrowUp') { ev.preventDefault(); xwArrow(-1, 0); }
+  else if (k === 'ArrowDown') { ev.preventDefault(); xwArrow(1, 0); }
+  else if (k === 'Enter' || k === 'Tab') { ev.preventDefault(); xwWordStep(ev.shiftKey); }
+  else if (k === ' ') { ev.preventDefault(); const ws = xg.cw[xg.cur]; if (ws && ws.length > 1) { xg.act = ws.find(i => i !== xg.act); xg._tp = null; xwPaint(); xwSave(); } }
 });
 
 /* ---------- Wordle of the tractate (וורדל מסכת שבת): one word of five letters a day, six guesses ----------
@@ -2698,7 +2919,7 @@ function wdChapter(e) {
   const k = e.cn ? e.pk : (Number.isInteger(e.pk) ? e.pk : pkOf(e.a));
   return 'פרק ' + ordPk(k) + ': ' + PEREKS[k][0];
 }
-function startWordle() { wd = wdToday(); if (!wd) { toast('המילה היומית לא נמצאה'); return; } nav('games', 'wordle'); }
+function startWordle() { if (lazyWait(XWN, startWordle)) return; wd = wdToday(); if (!wd) { toast('המילה היומית לא נמצאה'); return; } nav('games', 'wordle'); }
 function renderWordle() {
   const g = wd; heWordsLoad();
   view.className = 'panel tight';
@@ -2776,6 +2997,7 @@ function wdEndHtml() {
   const src = e.cn ? cSource(e) : e.xe ? 'מונח שנוסף לאפליקציה' : countLine(e) + ', לראשונה ב' + dafName(e.a);
   return '<div class="wend"><p class="wres">' + (g.won ? 'פתרת ב-' + g.rows.length + ' ניסיונות' : 'הפעם לא. המילה הייתה:') + '</p>' +
     '<b class="wword">' + esc(word) + '</b><p>' + esc(def) + '</p><p class="src">' + esc(src) + '</p>' +
+    (g.arch ? '' : streakLineHtml(streakInfo(S.settings.wdDays), 'הרצף בוורדל')) +
     '<button class="btn wide" id="wd-share">שתף תוצאה</button></div>';
 }
 function wdShareText() {
@@ -2809,9 +3031,22 @@ function streakInfo(list, extra) {
     }
     d.setDate(d.getDate() + 1);
   }
+  /* toward the next lifeline: the days solved in a row since the last one came back (7 bring one) */
+  out.run = run; out.toward = out.n ? run % 7 : 0;
   return out;
 }
 function streakOf(list, extra) { return streakInfo(list, extra).n; }
+/* the way to the next lifeline, as a row of seven marks: "4 מתוך 7 ימים לחבל הבא". With both lifelines in hand there is
+   nothing to earn, and it says so. compact: the short form for the daily card */
+function shieldMeterHtml(inf, compact) {
+  const full = inf.shields >= 2, k = full ? 7 : inf.toward;
+  const dots = '<span class="smd" aria-hidden="true">' + [0, 1, 2, 3, 4, 5, 6].map(i => '<i' + (i < k ? ' class="on"' : '') + '></i>').join('') + '</span>';
+  const txt = full ? (compact ? 'שני החבלים בידך' : 'שני חבלי ההצלה בידך') : compact ? k + '/7 לחבל הבא' : k + ' מתוך 7 ימים לחבל הבא';
+  return '<span class="smeter' + (full ? ' full' : '') + (compact ? ' compact' : '') + '" dir="rtl">' + dots + '<em>' + txt + '</em></span>';
+}
+function streakLineHtml(inf, name) {
+  return '<div class="sline"><p>' + name + ': 🔥 ' + inf.n + (inf.n === 1 ? ' יום' : ' ימים') + ' ברצף · 🛡️ ' + inf.shields + '/2</p>' + shieldMeterHtml(inf) + '</div>';
+}
 /* a lifeline used for yesterday is told once, on the learning screen */
 /* a gentle reminder once in 30 days to save a backup: progress lives only on this device.
    It counts from the last backup, or from the first day with progress; "לא עכשיו" puts it off by 30 days */
@@ -2827,7 +3062,7 @@ function backupNote() {
   if (!backupDue()) return;
   const at = view.querySelector('.today'); (at || view).insertAdjacentHTML(at ? 'beforebegin' : 'beforeend', '<div class="bk-note" id="bk-note"><p>עבר חודש מאז הגיבוי האחרון. ההתקדמות שמורה רק במכשיר הזה, וגיבוי שומר עליה אם המכשיר יוחלף או ינוקה.</p>' +
     '<div class="row"><button class="btn" id="bk-go">גיבוי עכשיו</button><button class="btn line" id="bk-later">לא עכשיו</button></div></div>');
-  $('bk-go').onclick = () => { exportBackup(); const n = $('bk-note'); if (n) n.remove(); };
+  $('bk-go').onclick = () => { shareBackup(); const n = $('bk-note'); if (n) n.remove(); };
   $('bk-later').onclick = () => { S.settings.backupSnooze = Date.now(); save(); const n = $('bk-note'); if (n) n.remove(); };
 }
 function shieldNotice() {
@@ -2841,7 +3076,7 @@ document.addEventListener('keydown', ev => {
   if (!(R.tab === 'games' && R.sub === 'wordle' && wd) || sheetOpen || ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (ev.key === 'Enter') { ev.preventDefault(); wdEnter(); }
   else if (ev.key === 'Backspace') { ev.preventDefault(); wdDel(); }
-  else if (/^[א-ת]$/.test(ev.key)) { ev.preventDefault(); wdType(ev.key); }
+  else if (keyLetter(ev)) { ev.preventDefault(); wdType(keyLetter(ev)); }
 });
 
 /* ---------- sheets: settings, about, onboarding ---------- */
@@ -2882,7 +3117,7 @@ function now() { return new Date(Date.now() + dayShift() * 86400000); }
 function localDay() { const d = now(); return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
 function backupText() {
   return JSON.stringify({ app: 'aramit-shabbat', version: VERSION, saved: localDay(),
-    data: { prog: S.prog, edits: S.edits, best: S.best, fav: S.fav, miss: S.miss, settings: S.settings } });
+    data: { prog: S.prog, edits: S.edits, best: S.best, fav: S.fav, miss: S.miss, settings: S.settings, schemaVersion: S.schemaVersion } });
 }
 function readBackup(text) {
   try {
@@ -2897,7 +3132,7 @@ function applyBackup(o) {
   S.edits = {}; for (const k in obj(d.edits)) if (typeof d.edits[k] === 'string') S.edits[k] = d.edits[k];
   S.best = obj(d.best); S.fav = obj(d.fav); S.miss = obj(d.miss); S._cstat = d.cstat && typeof d.cstat === 'object' ? d.cstat : null;
   const st = obj(d.settings); S.settings = { order: 'freq', newPerDay: 10, size: 'm' }; Object.assign(S.settings, st);
-  S.onboarded = true; migrate(); save(); applyLook(); restoreSc(); restoreTq(); syncReminder(false);
+  S.onboarded = true; S.schemaVersion = d.schemaVersion || 1; migrate(); save(); applyLook(); restoreSc(); restoreTq(); syncReminder(false);
   session = null; quiz = null; game = null;
 }
 function backupSummary(o) {
@@ -2945,6 +3180,136 @@ function openBackupText(msg) {
   };
   $('bt-load').onclick = () => { const v = $('bt-in').value; if (!v.trim()) { toast('אין טקסט לייבא'); return; } importText(v); };
 }
+/* ---------- protecting the progress (1.7) ----------
+   The progress lives in localStorage on this device. Three guards, all silent and all harmless where unsupported:
+   1. persistent storage: the browser is asked once there is progress not to clear the site's data under storage pressure;
+   2. a second copy in IndexedDB, written a moment after every save. When localStorage comes back empty while that copy
+      holds progress (Safari and some cleaners clear one and not the other), the copy is put back and the app reloads;
+   3. a backup file sent in one tap (the share sheet of the phone: WhatsApp, email, Drive), or downloaded where there is none.
+   The tests seed localStorage themselves: under ?test the copy is neither written nor read unless the address asks (&idb) */
+const IDB_ON = !NATIVE && typeof indexedDB !== 'undefined' && (!/[?&]test\b/.test(location.search) || /[?&]idb\b/.test(location.search));
+const IDB_DB = 'pshita', IDB_ST = 'kv';
+/* nothing is written before the copy was checked at start, so an empty first screen never covers a good copy */
+let idbChecked = false, mirrorTimer = null;
+function idbOpen() {
+  return new Promise((ok, fail) => {
+    let rq; try { rq = indexedDB.open(IDB_DB, 1); } catch (e) { fail(e); return; }
+    rq.onupgradeneeded = () => { try { rq.result.createObjectStore(IDB_ST); } catch (e) { /* already there */ } };
+    rq.onsuccess = () => ok(rq.result); rq.onerror = () => fail(rq.error); rq.onblocked = () => fail(new Error('blocked'));
+  });
+}
+function idbDo(mode, fn) {
+  return idbOpen().then(db => new Promise((ok, fail) => {
+    const tx = db.transaction(IDB_ST, mode), st = tx.objectStore(IDB_ST), rq = fn(st);
+    tx.oncomplete = () => { db.close(); ok(rq && rq.result); }; tx.onerror = tx.onabort = () => { db.close(); fail(tx.error); };
+  }));
+}
+function mirrorSoon() {
+  if (!IDB_ON || !idbChecked) return;
+  clearTimeout(mirrorTimer); mirrorTimer = setTimeout(mirrorNow, 1500);
+}
+function mirrorNow() {
+  if (!IDB_ON || !idbChecked) return Promise.resolve();
+  let o; try { o = { at: Date.now(), reset: RESET_AT, ver: VERSION, main: localStorage.getItem(KEY), xw: localStorage.getItem(XKEY), wd: localStorage.getItem(WKEY) }; } catch (e) { return Promise.resolve(); }
+  if (!o.main) return Promise.resolve();
+  return idbDo('readwrite', st => st.put(o, 'state')).catch(() => { /* private window or blocked: the copy is a bonus */ });
+}
+function hasProgress(raw) { try { const o = JSON.parse(raw); return !!(o && ((o.prog && Object.keys(o.prog).length) || (o.settings && ((o.settings.xwDays || []).length || (o.settings.wdDays || []).length)))); } catch (e) { return false; } }
+/* at start: localStorage was empty (wasEmpty is read before load) and the copy holds progress: put it back and reload */
+function idbCheck(wasEmpty) {
+  if (!IDB_ON) return;
+  const done = () => { idbChecked = true; if (localStorage.getItem(KEY)) mirrorSoon(); };
+  idbDo('readonly', st => st.get('state')).then(o => {
+    if (wasEmpty && o && o.reset === RESET_AT && hasProgress(o.main) && !Object.keys(S.prog).length) {
+      try {
+        localStorage.setItem(KEY, o.main);
+        if (o.xw && !localStorage.getItem(XKEY)) localStorage.setItem(XKEY, o.xw);
+        if (o.wd && !localStorage.getItem(WKEY)) localStorage.setItem(WKEY, o.wd);
+        localStorage.setItem(RESET_KEY, RESET_AT);
+        sessionStorage.setItem('pshita-restored', '1');
+      } catch (e) { done(); return; }
+      track('idb_restore'); location.reload(); return;
+    }
+    done();
+  }, done);
+}
+/* persistent storage: asked once there is progress to keep. Chrome decides silently (granted to a site in use or added
+   to the home screen); a browser that would ask the reader is asked only then, never on the first visit */
+function askPersist() {
+  try {
+    if (NATIVE || !navigator.storage || !navigator.storage.persist || !Object.keys(S.prog).length) return;
+    navigator.storage.persisted().then(p => p || navigator.storage.persist()).then(p => { if (p && !S.settings.persisted) { S.settings.persisted = 1; save(); } }).catch(() => { /* not here */ });
+  } catch (e) { /* not here */ }
+}
+/* the backup in one tap: the share sheet with the file where the browser can share files, else the download (or the text) */
+async function shareBackup() {
+  const text = backupText(), name = 'pshita-backup-' + localDay() + '.json';
+  let file = null; try { file = new File([text], name, { type: 'application/json' }); } catch (e) { /* an old browser */ }
+  if (file && navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'גיבוי פשיטא', text: 'גיבוי ההתקדמות בפשיטא מתאריך ' + localDay().split('-').reverse().join('.') });
+      S.settings.backupAt = Date.now(); save(); track('backup_share'); toast('הגיבוי נשלח'); return;
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  track('backup_download'); exportBackup();
+}
+
+/* ---------- a daily reminder in the calendar (1.7) ----------
+   A calendar file (.ics) with one event a day at the chosen hour and an alert at its start. Every phone opens it in its
+   own calendar: iPhone and filtered phones too, where web notifications do not reach. The time has no time zone, so it
+   stays at the same hour wherever the phone is */
+function icsFold(line) {
+  /* lines of at most 75 bytes, a continuation starting with a space; a Hebrew letter is never cut in the middle */
+  const enc = new TextEncoder(), out = []; let cur = '', n = 0;
+  for (const ch of line) { const b = enc.encode(ch).length; if (n + b > (out.length ? 74 : 75)) { out.push(cur); cur = ''; n = 0; } cur += ch; n += b; }
+  out.push(cur); return out.join('\r\n ');
+}
+function icsText(h, m) {
+  const d = now(), at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m);
+  if (at <= d) at.setDate(at.getDate() + 1);
+  const p = n => (n < 10 ? '0' : '') + n, local = x => x.getFullYear() + p(x.getMonth() + 1) + p(x.getDate()) + 'T' + p(x.getHours()) + p(x.getMinutes()) + '00';
+  const u = new Date(), utc = u.getUTCFullYear() + p(u.getUTCMonth() + 1) + p(u.getUTCDate()) + 'T' + p(u.getUTCHours()) + p(u.getUTCMinutes()) + p(u.getUTCSeconds()) + 'Z';
+  const url = APP_URL + '?daily=1', esc2 = t => t.replace(/[\;,]/g, c => '\\' + c);
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//pshita.tsafrir.com//Pshita//HE', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT', 'UID:pshita-daily-' + Date.now() + '@pshita.tsafrir.com', 'DTSTAMP:' + utc, 'DTSTART:' + local(at), 'DURATION:PT10M', 'RRULE:FREQ=DAILY',
+    'SUMMARY:' + esc2('פשיטא: חזרה יומית'), 'DESCRIPTION:' + esc2('10 מילים ומושגים ממסכת שבת, והתשחץ והוורדל של היום') + '\\n' + url, 'URL:' + url,
+    'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc2('פשיטא: חזרה יומית'), 'TRIGGER:-PT0M', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR'].map(icsFold).join('\r\n') + '\r\n';
+}
+function downloadIcs(h, m) {
+  const text = icsText(h, m), name = 'pshita-daily.ics';
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' })), a = document.createElement('a');
+    a.href = url;
+    /* Safari on the iPhone opens a calendar file it is shown and offers "הוסף ליומן"; elsewhere the file is downloaded and
+       opened from the downloads */
+    if (IOS) a.target = '_blank'; else a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    track('ics_reminder', { h }); toast('נוצר קובץ יומן לשעה ' + two(h) + ':' + two(m) + '. פתחו אותו והוסיפו ליומן');
+  } catch (e) { toast('לא הצלחתי ליצור את קובץ היומן בדפדפן הזה'); }
+}
+
+/* ---------- the iPhone: a one-time hint to add the site to the home screen (1.7) ----------
+   Only in Safari on an iPhone or iPad, outside the home screen app, after the first opening, once on each device. It
+   points to the share button of Safari: on the bottom bar of an iPhone, at the top of an iPad */
+const IOS_HINT_KEY = 'aramit-ios-hint';
+function iosHint() {
+  const forced = /[?&]ioshint\b/.test(location.search);
+  if (!forced && (/[?&]test\b/.test(location.search) || NATIVE || STANDALONE || !IOS || IN_APP || IOS_OTHER || !S.onboarded)) return;
+  try { if (localStorage.getItem(IOS_HINT_KEY) && !forced) return; localStorage.setItem(IOS_HINT_KEY, String(Date.now())); } catch (e) { return; }
+  const pad = /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const share = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5v10h14V11h-1"/></svg>';
+  document.body.insertAdjacentHTML('beforeend', '<div class="ioshint' + (pad ? ' top' : '') + '" id="ioshint" role="dialog" aria-label="הוספה למסך הבית">' +
+    '<button class="link" id="ioshint-x" aria-label="סגירה">✕</button><b>פשיטא כאפליקציה באייפון</b>' +
+    '<p>לחצו על כפתור השיתוף <span class="ish">' + share + '</span> ' + (pad ? 'למעלה' : 'בתחתית המסך') + ', ואז על "הוסף למסך הבית". כך היא נפתחת במסך מלא ועובדת גם בלי רשת.</p></div>');
+  const el = document.getElementById('ioshint'), close = () => { el.classList.remove('on'); setTimeout(() => el.remove(), 250); };
+  requestAnimationFrame(() => el.classList.add('on'));
+  document.getElementById('ioshint-x').onclick = close;
+  /* any tap elsewhere puts it away too, so it never stands over a sheet or a game */
+  setTimeout(() => document.addEventListener('pointerdown', function away(ev) { if (!el.contains(ev.target)) { document.removeEventListener('pointerdown', away, true); close(); } }, true), 400);
+  setTimeout(() => { if (document.getElementById('ioshint')) close(); }, 20000);
+  track('ios_hint');
+}
 /* one local notification a day, at the chosen time. It needs no network, and a tap on it opens the short daily round */
 /* the web version: the hour is kept where the service worker can read it, and on a site added to the home screen
    (Chrome on Android) the browser wakes the service worker now and then, which shows the reminder once a day after
@@ -2985,13 +3350,18 @@ function openSettings(confirmReset) {
   const st = stats(D.concat(CN)), r = S.settings.remind || { on: false, h: 20, m: 0 }, native = !!plug('App');
   openSheet('<div class="row between shead"><h2>הגדרות</h2><button class="link" id="s-close">סגירה</button></div>' +
     '<div class="field"><span class="label">ערכים חדשים ביום</span><div class="seg" id="s-npd">' + [5, 10, 20, 30, 50].map(n => '<button data-v="' + n + '" aria-pressed="' + (S.settings.newPerDay === n) + '">' + n + '</button>').join('') + '</div></div>' +
+    '<div class="field"><span class="label">אופן התרגול בלימוד</span><div class="seg" id="s-smode">' + [['mix', 'משולב'], ['flip', 'כרטיסיות'], ['mcq', 'אמריקאי']].map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (studyMode() === o[0]) + '">' + o[1] + '</button>').join('') + '</div>' +
+    '<p class="small muted">' + { mix: 'מילים בתחילת הדרך נשאלות עם ארבע תשובות, ומילים שכבר יציבות אצלך שלושה ימים ומעלה בכרטיס שהופכים. בכל סבב קודם הכרטיסים ואחר כך השאלות והמילים החדשות.', flip: 'כל החזרות בכרטיס שהופכים: נזכרים בעצמך ואומרים אם ידעת.', mcq: 'כל החזרות בשאלות עם ארבע תשובות. מילה נעשית ידועה לפי מידת היציבות שלה בזיכרון.' }[studyMode()] + '</p></div>' +
     '<div class="field"><span class="label">סדר הערכים החדשים</span><div class="seg" id="s-ord"><button data-v="freq" aria-pressed="' + (S.settings.order !== 'daf') + '">מהשכיחה לנדירה</button><button data-v="daf" aria-pressed="' + (S.settings.order === 'daf') + '">לפי סדר הדפים</button></div></div>' +
     '<div class="field"><span class="label">גודל הכתב</span><div class="seg" id="s-size"><button data-v="m" aria-pressed="' + (S.settings.size === 'm') + '">רגיל</button><button data-v="l" aria-pressed="' + (S.settings.size === 'l') + '">גדול</button><button data-v="xl" aria-pressed="' + (S.settings.size === 'xl') + '">גדול מאוד</button></div></div>' +
     '<div class="field"><span class="label">תזכורת יומית</span><div class="seg" id="s-rem"><button data-v="off" aria-pressed="' + !r.on + '">כבויה</button><button data-v="on" aria-pressed="' + !!r.on + '">פעילה</button></div>' +
     (r.on ? '<label for="s-time">באיזו שעה</label><input type="time" id="s-time" value="' + two(r.h) + ':' + two(r.m) + '">' : '') +
     '<p class="small muted">התראה אחת ביום, "חזרה יומית: 10 מילים ומושגים". לחיצה עליה פותחת חידון קצר. היא פועלת בלי רשת.' + (native ? '' : ' התזכורת פועלת כאשר האתר מוצמד למסך הבית (באנדרואיד).') + '</p>' +
     '<button class="link start" id="s-daily">לפתוח את החידון היומי עכשיו</button></div>' +
-    '<div class="field"><span class="label">גיבוי ושחזור</span><div class="two"><button class="btn line" id="s-export">ייצוא גיבוי</button><button class="btn line" id="s-import">ייבוא גיבוי</button></div>' +
+    '<div class="field"><span class="label">תזכורת יומית ביומן</span><div class="two ics"><input type="time" id="s-ics-time" value="' + two(r.h) + ':' + two(r.m) + '" aria-label="שעת התזכורת ביומן"><button class="btn line" id="s-ics">הוספה ליומן</button></div>' +
+      '<p class="small muted">אירוע שחוזר כל יום בשעה שבחרת, עם התראה, ביומן של הטלפון. עובד בכל מכשיר, גם באייפון ובמכשיר מסונן, ובלי רשת. (קובץ ics)</p></div>' +
+    '<div class="field"><span class="label">גיבוי ושחזור</span>' + (native ? '' : '<button class="btn wide" id="s-share">שליחת גיבוי בלחיצה</button><p class="small muted">שולחים את קובץ הגיבוי לעצמכם, בוואטסאפ, במייל או לכונן, וכך הוא שמור גם מחוץ למכשיר.</p>') +
+    '<div class="two"><button class="btn line" id="s-export">ייצוא גיבוי</button><button class="btn line" id="s-import">ייבוא גיבוי</button></div>' +
     '<input type="file" id="s-file" accept=".json,application/json,text/plain" hidden>' +
     '<p class="small muted">קובץ הגיבוי כולל את ההתקדמות, המועדפים, רשימת הטעויות, השיאים, ההגדרות והפירושים שערכת.</p>' +
     '<button class="link start" id="s-text">גיבוי ושחזור כטקסט</button></div>' +
@@ -3008,10 +3378,12 @@ function openSettings(confirmReset) {
     '<p>הפירושים קצרים ונועדו לעזור בקריאה שוטפת. הם אינם תחליף לרש"י ולמפרשים, ובמילה שיש לה כמה מובנים ייתכן שהפירוש לא יתאים לכל מקום. אפשר לתקן כל פירוש במילון, והתיקון נשמר במכשיר שלך.</p>' +
     '<p>הספירה נעשתה על נוסח הגמרא שבספריא (מהדורת ויליאם דוידסון, קורן). הגופנים: פרנק ריהל ליברה ואסיסטנט, ברישיון פתוח (OFL).</p>' +
     '<p>בוורדל אפשר לנחש גם מילים עבריות רגילות. רשימת המילים לקוחה ממאגר שכיחות המילים של הרמיט דייב, שנבנה מכתוביות סרטים (OpenSubtitles), ברישיון CC BY-SA 4.0.</p>' +
-    '<p>האפליקציה פועלת בלי רשת ואינה אוספת שום מידע. ההתקדמות נשמרת במכשיר בלבד. גרסה ' + VERSION + '</p></div>');
+    '<p>האפליקציה פועלת בלי רשת ואינה אוספת שום מידע. ההתקדמות נשמרת במכשיר בלבד. גרסה ' + VERSION + '</p>' +
+    '<p class="credit">נוסח הגמרא על פי מהדורת ויליאם דוידסון בספריא (CC-BY-NC)</p></div>');
   $('s-close').onclick = closeSheet;
   bindSeg('s-npd', v => { S.settings.newPerDay = +v; save(); openSettings(); render(); });
   bindSeg('s-ord', v => { S.settings.order = v; save(); openSettings(); render(); });
+  bindSeg('s-smode', v => { S.settings.smode = v; save(); track('study_mode', { mode: v }); openSettings(); render(); });
   bindSeg('s-size', v => { S.settings.size = v; save(); applyLook(); openSettings(); });
   bindSeg('s-rem', v => {
     const on = v === 'on'; S.settings.remind = { on, h: r.h, m: r.m }; save(); openSettings();
@@ -3024,6 +3396,8 @@ function openSettings(confirmReset) {
   };
   $('s-daily').onclick = () => { closeSheet(); startDaily(); };
   $('s-export').onclick = () => { exportBackup(); };
+  if ($('s-share')) $('s-share').onclick = () => { shareBackup(); };
+  $('s-ics').onclick = () => { const mt = /^(\d{1,2}):(\d{2})/.exec($('s-ics-time').value || ''); if (!mt) { toast('בחרו שעה'); return; } downloadIcs(Math.min(23, +mt[1]), Math.min(59, +mt[2])); };
   $('s-import').onclick = () => $('s-file').click();
   $('s-file').onchange = () => {
     const f = $('s-file').files && $('s-file').files[0]; if (!f) return;
@@ -3125,7 +3499,7 @@ function openOnboarding(step) {
     '<p class="muted">כמה דקות ביום מספיקות. האפליקציה זוכרת מה למדת ומחזירה כל מילה בדיוק כשצריך לחזור עליה.</p>';
   else if (step === 1) body = '<div class="hero">איך הלימוד עובד</div>' +
     '<p>כל יום מקבלים כמה מילים חדשות ואת המילים שהגיע זמנן לחזרה.</p>' +
-    '<p>מילה שעונים עליה נכון חוזרת אחרי יום, אחר כך אחרי שלושה ימים, שבוע, שבועיים, חודש וחודשיים. טעות מחזירה אותה להתחלה.</p>' +
+    '<p>מילה שעונים עליה נכון חוזרת אחרי זמן שהולך ומתארך, לפי כמה היא כבר יציבה אצלך בזיכרון: מיום אחד ועד חצי שנה. טעות מחזירה אותה להתחלה.</p>' +
     '<p class="muted">מילה שכבר מכירים מסמנים "כבר יודע", והיא מדלגת קדימה. אפשר ללמוד כך גם את המושגים, ולבחור מה לתרגל: פרקים, טווח דפים, מועדפים או טעויות חוזרות. חוץ מהלימוד יש מילון מלא, חידון בשלוש רמות ושלושה משחקים.</p>';
   else body = '<div class="hero">באיזה סדר ללמוד?</div>' +
     '<div class="seg" id="o-ord"><button data-v="freq" aria-pressed="' + (S.settings.order !== 'daf') + '">מהשכיחה לנדירה</button><button data-v="daf" aria-pressed="' + (S.settings.order === 'daf') + '">לפי סדר הדפים</button></div>' +
@@ -3141,6 +3515,7 @@ function openOnboarding(step) {
 }
 
 /* ---------- boot ---------- */
+let lsEmpty = false; try { lsEmpty = localStorage.getItem(KEY) === null; } catch (e) { /* storage blocked */ }
 load(); applyLook(); restoreSc(); restoreTq(); restoreXw();
 if (BETA) { const h = document.querySelector('header h1'); if (h) { const sm = h.querySelector('small'); (sm || h).insertAdjacentHTML(sm ? 'beforebegin' : 'beforeend', '<span class="beta">BETA</span>'); } }
 document.querySelectorAll('#tabs button').forEach(b => { b.onclick = () => turnTo(b.dataset.tab); });
@@ -3153,9 +3528,15 @@ try { history.replaceState(R, ''); } catch (e) { /* ignore */ }
 render();
 TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
-else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
+else if (/"open":true/.test(localStorage.getItem(XKEY) || '')) need(XWN).then(() => { const sv = xwLoad(); if (sv && sv.open && !R.sub && !sheetOpen) { xg = sv; nav('xw', 'board'); } });
+/* the files of the main screens, right after the first one is drawn; the screen shown is drawn again with them */
+setTimeout(() => need(['occ'].concat(XWN)).then(() => { if (!R.sub && !sheetOpen && !(drawn[R.tab] && drawn[R.tab].ver === ver)) render(false); }, () => { /* offline before the first visit ended */ }), 0);
+idbCheck(lsEmpty); askPersist();
+try { if (sessionStorage.getItem('pshita-restored')) { sessionStorage.removeItem('pshita-restored'); toast('ההתקדמות שוחזרה מהעותק השמור במכשיר'); } } catch (e) { /* ignore */ }
+setTimeout(iosHint, 2500);
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()], pkDafs: k => pkDafs(k), locShare: () => locShareText(), dafPts: d => dafPts(d) };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()], pkDafs: k => pkDafs(k), locShare: () => locShareText(), dafPts: d => dafPts(d), xwTwo: () => XW_TWO.map(e => e.w),
+  today: () => today(), applyBackup: o => applyBackup(o), backupText: () => backupText(), setProg: (w, p) => { S.prog[pid(BYID.get(w))] = p; save(); }, pickMode: w => pickMode({ e: BYID.get(w), isNew: false }), markKnown: w => markKnown(BYID.get(w)), studyOk: w => studyOk(BYID.get(w)), exHtml: i => exHtml(D[i]), studyMode: () => studyMode(), groupQueue: l => groupQueue(l.map(x => ({ e: BYID.get(x.w), isNew: !!x.n }))), planMode: (w, isNew) => planMode({ e: BYID.get(w), isNew: !!isNew }), nav: (t, s) => nav(t, s) };
 
 /* hardware back button inside the Android app */
 try {

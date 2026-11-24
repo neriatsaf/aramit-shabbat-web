@@ -547,6 +547,7 @@ h2,h3{font-family:var(--f-ui);font-weight:700}
 .tabs button i{position:absolute;top:-1px;width:36px;height:3px;border-radius:0 0 3px 3px}
 .tabs button[aria-selected="true"] i{background:var(--gold)}
 :root[data-theme="dark"] .tabs button[aria-selected="true"] i{background:var(--brand)}
+body.kbmode .tabs button[aria-selected="true"] i{background:transparent}
 .wt.s-x{background:#8A7B6A;border-color:#8A7B6A}
 .xkb button.k-x{background:#8A7B6A}
 .sheet{background:rgba(30,18,8,.55)}
@@ -589,3 +590,44 @@ h2,h3{font-family:var(--f-ui);font-weight:700}
 .loclist span{flex:none;min-width:36px;height:30px;padding:0 4px;border-radius:8px;display:grid;place-items:center;font-weight:800;font-size:.9rem}
 .loclist b{display:block;font-size:.9rem}
 .loclist small{display:block;font-family:var(--f-word);color:var(--muted);font-size:.9rem;line-height:1.5}
+/* the way to the next lifeline (1.7): seven marks, filled for each day solved in a row since the last lifeline came back */
+.smeter{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted);flex-wrap:wrap}
+.smeter em{font-style:normal;font-variant-numeric:tabular-nums}
+.smd{display:inline-flex;gap:3px}
+.smd i{width:7px;height:7px;border-radius:50%;border:1px solid var(--rule);background:transparent}
+.smd i.on{background:var(--gold);border-color:var(--gold)}
+.smeter.full .smd i.on{background:var(--good);border-color:var(--good)}
+.hcard .smeter{color:var(--hero-sub);font-size:.74rem;gap:5px}
+.hcard .smd i{width:6px;height:6px;border-color:var(--hero-line)}
+.hcard .smd i.on{background:var(--cta);border-color:var(--cta)}
+.hcard .smeter.full .smd i.on{background:#9CC587;border-color:#9CC587}
+.sline{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin:6px 0;display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:start;align-self:stretch}
+.sline p{margin:0;font-weight:700;font-size:.9rem}
+/* settings: the calendar reminder row */
+.two.ics{grid-template-columns:1fr 1fr;align-items:stretch}
+.two.ics input{min-height:44px}
+/* the one-time hint for Safari on the iPhone: a card over the tab bar pointing down to the share button (up on an iPad) */
+.ioshint{position:fixed;inset-inline:16px;bottom:calc(var(--tabs-h,76px) + 12px);max-width:420px;margin:0 auto;z-index:60;background:var(--hero);color:var(--hero-ink);border:1px solid var(--hero-line);border-radius:14px;padding:12px 14px 12px 40px;box-shadow:0 12px 28px -12px rgba(0,0,0,.6);opacity:0;transform:translateY(10px);transition:opacity .25s,transform .25s}
+.ioshint.top{bottom:auto;top:calc(12px + env(safe-area-inset-top,0px))}
+.ioshint.on{opacity:1;transform:none}
+.ioshint b{display:block;margin-bottom:4px}
+.ioshint p{margin:0;font-size:.9rem;line-height:1.45;color:var(--hero-sub)}
+.ioshint .ish svg{width:18px;height:18px;vertical-align:-3px;fill:none;stroke:var(--cta);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ioshint #ioshint-x{position:absolute;top:6px;left:8px;color:var(--hero-sub);font-size:1rem;padding:6px}
+.ioshint:not(.top)::after{content:"";position:absolute;bottom:-7px;left:50%;width:12px;height:12px;background:var(--hero);border-right:1px solid var(--hero-line);border-bottom:1px solid var(--hero-line);transform:translateX(-50%) rotate(45deg)}
+.loading{color:var(--muted);text-align:center;padding:40px 0}
+/* wide screens and a mouse (1.7): a wider column, and keys and buttons that answer the pointer */
+@media (min-width:900px){#app,.tabs div{max-width:680px}.sheet>div{max-width:680px}.toast{max-width:648px}}
+@media (hover:hover) and (pointer:fine){
+  .xkb button:hover,.btn:hover,.hcard:hover,.menu button:hover{filter:brightness(.97)}
+  :root[data-theme="dark"] .xkb button:hover,:root[data-theme="dark"] .btn:hover,:root[data-theme="dark"] .hcard:hover,:root[data-theme="dark"] .menu button:hover{filter:brightness(1.12)}
+  .cell-letter,.xq,.tabs button{cursor:pointer}
+}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+/* the context sentence from the Gemara (examples.js): the entry marked in it, with its place */
+.ctx{width:100%;text-align:start;background:var(--soft);border:1px solid var(--line);border-inline-start:4px solid var(--gold);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.ctx[hidden]{display:none}
+.ctx .ctxt{margin:0;font-size:1.05rem;line-height:1.6;overflow-wrap:anywhere}
+.ctx mark{background:var(--gold-soft);color:var(--ink);font-weight:700;border-radius:4px;padding:0 3px;box-shadow:inset 0 -2px 0 var(--gold)}
+.detail .ctx{margin:6px 0 10px}
+.credit{font-size:.75rem;opacity:.85;border-top:1px dashed var(--line);padding-top:8px;margin-top:4px}
