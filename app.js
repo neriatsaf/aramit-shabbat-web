@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.8';
+const VERSION = '1.6.9';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -1751,7 +1751,9 @@ function rootLeak(ans, clue) {
 }
 /* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
    No levels (24.11.2026): from the whole store only the chosen store, without the rare words of the expanded store */
-const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
+/* a word that is not clean (a prefix, the same as in Hebrew, a letter's name) is never asked for (XW_SKIP, tools/make-xwskip.js) */
+const XW_SKIP = new Set(window.XW_SKIP || []);
+const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return !XW_SKIP.has(xwSrc(e) + ':' + e.w) && t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
 const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && !(e.ext && /בעל כמה פירושים/.test(e.m0)) && xwOk(e, e.cn ? e.s : short(e), 34));
 BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && xwOk(e, e.s, 40)) XW_ALL.push(e); });
 const xwCfg = { src: 'all', pereks: [] };
