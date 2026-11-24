@@ -55,7 +55,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .iconbtn{border:1px solid var(--line);background:var(--surface);border-radius:10px;min-width:44px;min-height:44px;font-size:.85rem;font-weight:700;color:var(--muted);padding:0 12px}
 #rail-wrap{flex:1;min-height:0;overflow:hidden;position:relative}
 #rail{display:flex;width:500%;height:100%;will-change:transform;transform:translate3d(-80%,0,0)}
-.panel{width:20%;height:100%;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:8px 16px calc(var(--tabs-h,calc(76px + env(safe-area-inset-bottom,0px))) + 20px);display:flex;flex-direction:column;gap:14px;min-width:0}
+/* a screen ends where the tab bar starts, so nothing scrolls behind the bar (24.11.2026); the board screens (.tight) keep the full height and fit themselves */
+.panel{width:20%;height:calc(100% - var(--tabs-h,calc(76px + env(safe-area-inset-bottom,0px))));box-sizing:border-box;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:8px 16px 20px;display:flex;flex-direction:column;gap:14px;min-width:0}
 .panel>*{flex-shrink:0}
 
 .tabs{position:fixed;inset-inline:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
@@ -203,7 +204,7 @@ h3{font-family:var(--f-word);font-weight:700;font-size:1.05rem;margin:14px 0 0}
 /* arrow crossword, in plain colours: a light board in light mode, a soft dark one in dark mode */
 :root{--xanchor:#B8862E;--xframe:#BFA47A;--xgap:#D8C6A6;--xv:#C9B48E;--xl:#FFFDF7;--xlb:#D8C6A6;--xlt:#2A1B10;--xon:#EED9AC;--xcur:#FFE08A;--xcurb:#B7791F;--xbad:#F6D0C8;--xbadt:#A63A2E;--xhint:#6D28D9;--xhb:#EDE4FB;--xk:#E8D3A8;--xkt:#3E2512;--xka:#3E2512;--xksep:#CDB48A;--xok:#3F7A3A;--xsol:#E6F0DC;--xarw:#7A3E1D}
 :root[data-theme="dark"]{--xanchor:#E3B45E;--xframe:#110C08;--xgap:#110C08;--xv:#110C08;--xl:#241B13;--xlb:#4A3A28;--xlt:#F3E8D2;--xon:#5E4626;--xcur:#8A6A1F;--xcurb:#F0C766;--xbad:#6B2A26;--xbadt:#FFC9BF;--xhint:#EBDDFF;--xhb:#55407F;--xk:#5A4128;--xkt:#F6EAD2;--xka:#FFFFFF;--xksep:#6B5536;--xok:#93C47D;--xsol:#2E4026;--xarw:#E8C887}
-.panel.tight{padding-top:6px;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));overflow:hidden}
+.panel.tight{height:100%;padding-top:6px;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px));overflow:hidden}
 body.xwmode .top{display:none}
 .xw>.row .link{min-height:34px;padding:4px 6px}
 .xw{display:flex;flex-direction:column;gap:6px;align-items:center;height:100%}
