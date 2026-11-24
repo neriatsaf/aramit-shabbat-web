@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.4';
+const VERSION = '1.6.5';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -297,7 +297,8 @@ function openDpModal(st, lo, hi, done) {
   };
   draw(); requestAnimationFrame(() => m.classList.add('on'));
 }
-function dafName(a) { return 'דף ' + hebNum(dafNum(a)) + (a % 2 ? ' ע"ב' : ' ע"א'); }
+/* with no-break spaces, so "דף ב ע"א" never splits over two lines */
+function dafName(a) { return 'דף\u00a0' + hebNum(dafNum(a)) + (a % 2 ? '\u00a0ע"ב' : '\u00a0ע"א'); }
 function dafShort(a) { return hebNum(dafNum(a)) + (a % 2 ? ':' : '.'); }
 function ordPk(k) { return ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט', 'י', 'יא', 'יב', 'יג', 'יד', 'טו', 'טז', 'יז', 'יח', 'יט', 'כ', 'כא', 'כב', 'כג', 'כד'][k] || ''; }
 function cSource(c) { return (c.mi ? 'משנה' : 'גמרא') + ', ' + dafName(c.a) + ', פרק ' + ordPk(c.pk) + ' (' + PEREKS[c.pk][0] + ')'; }
@@ -498,7 +499,10 @@ function inScope(e) {
   return true;
 }
 function kindList(kind) { kind = kind || SC.kind; return kind === 'words' ? D : kind === 'concepts' ? CN : D.concat(CN); }
-function scopeItems() { return kindList().filter(inScope); }
+/* Hebrew words whose definition is the word itself teach no Aramaic: kept in the dictionary, never in study, the quiz or the games (24.11.2026) */
+const NO_STUDY = new Set(['חייב', 'מחייב']);
+function studyOk(e) { return e.cn || !NO_STUDY.has(e.w); }
+function scopeItems() { return kindList().filter(e => studyOk(e) && inScope(e)); }
 function nWords(n) { return n === 1 ? 'מילה או ביטוי אחד' : n + ' מילים וביטויים'; }
 function nConcepts(n) { return n === 1 ? 'מושג אחד' : n + ' מושגים'; }
 function countLabel(items) {
@@ -1481,7 +1485,7 @@ function renderGames() {
 function noteMistake(e, picked) { const g = game; g.mistakes = g.mistakes || []; if (!g.mistakes.some(m => m.e === e)) g.mistakes.push({ e, picked }); }
 /* the games keep moving: from the whole store they leave out the rare words */
 function gamePool(min) {
-  const src = pool(gameCfg.scope).filter(e => gameCfg.scope !== 'all' || !e.rare);
+  const src = pool(gameCfg.scope).filter(e => studyOk(e) && (gameCfg.scope !== 'all' || !e.rare));
   if (src.length < min) { toast('אין מספיק מילים שלמדת למשחק הזה. צריך לפחות ' + min + ', או לבחור בכל המאגר'); return null; }
   return src;
 }
