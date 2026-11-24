@@ -101,6 +101,11 @@ a.btn{display:flex;align-items:center;justify-content:center;text-decoration:non
 .field{display:flex;flex-direction:column;gap:5px}
 .field>label,.label{font-size:.86rem;font-weight:700;color:var(--muted)}
 select,input[type=search],input[type=text],input[type=time],textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;min-height:46px}
+/* the clear button of the search box in the app's own colours, not the browser's blue */
+input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;width:18px;height:18px;margin-inline-start:6px;cursor:pointer;background-color:var(--muted);
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 1a11 11 0 1 1 0 22a11 11 0 0 1 0-22zM8.7 7.3L7.3 8.7L10.6 12l-3.3 3.3l1.4 1.4l3.3-3.3l3.3 3.3l1.4-1.4L13.4 12l3.3-3.3l-1.4-1.4L12 10.6z'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 1a11 11 0 1 1 0 22a11 11 0 0 1 0-22zM8.7 7.3L7.3 8.7L10.6 12l-3.3 3.3l1.4 1.4l3.3-3.3l3.3 3.3l1.4-1.4L13.4 12l3.3-3.3l-1.4-1.4L12 10.6z'/%3E%3C/svg%3E") center/contain no-repeat}
+input[type=search]::-webkit-search-cancel-button:hover{background-color:var(--brand)}
 textarea{min-height:84px;resize:vertical}
 
 .progress{height:5px;border-radius:3px;background:var(--soft);overflow:hidden}
@@ -125,9 +130,9 @@ textarea{min-height:84px;resize:vertical}
 .menu button span{grid-column:1;color:var(--muted);font-size:.9rem}
 .menu button em{grid-row:1/3;grid-column:2;font-style:normal;color:var(--gold);font-weight:700;font-size:.86rem;white-space:nowrap}
 
-.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:2px}
 .chips::-webkit-scrollbar{display:none}
-.chip{border:1px solid var(--line);background:var(--surface);border-radius:20px;padding:7px 14px;font-weight:600;font-size:.9rem;white-space:nowrap;color:var(--muted);min-height:40px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:20px;padding:7px 14px;font-weight:600;font-size:.9rem;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;color:var(--muted);min-height:40px}
 .chip[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
 .list{display:flex;flex-direction:column}
 .dafhead{font-size:.8rem;font-weight:700;color:var(--gold);padding:14px 0 4px;border-bottom:1px solid var(--line)}
@@ -161,6 +166,8 @@ textarea{min-height:84px;resize:vertical}
 
 .sheet{position:fixed;inset:0;background:rgba(8,12,22,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet>div{background:var(--bg);width:100%;max-width:600px;max-height:92%;overflow:auto;border-radius:20px 20px 0 0;padding:20px 16px calc(48px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
+/* the settings title and its close button stay on top while the sheet scrolls */
+.sheet .shead{position:sticky;top:-20px;z-index:2;background:var(--bg);margin:-20px -16px 0;padding:20px 16px 10px}
 .sheet.full{align-items:stretch}
 .sheet.full>div{max-height:none;border-radius:0;padding-top:calc(28px + env(safe-area-inset-top,0px));justify-content:center}
 .steps{display:flex;gap:6px;justify-content:center}
@@ -266,6 +273,7 @@ body.xwmode .top{display:none}
 .xkb>div.r2{width:92%;margin:0 auto}
 .xkb button{flex:1 1 0;min-width:0;height:var(--kh,44px);border:0;border-radius:7px;background:var(--key);box-shadow:0 1px 0 var(--line);color:var(--ink);font-family:var(--f-word);font-size:20px;font-weight:700;padding:0}
 .xkb button.del{flex:1.5 1 0;font-family:var(--f-ui);font-size:20px;background:var(--soft)}
+.xkb button.del svg{display:block;margin:auto;width:24px;height:24px}
 .xkb button:active{background:var(--brand-soft)}
 /* the daily challenges at the top of the learn tab: crossword and Wordle side by side */
 .hub{border-radius:14px;padding:10px;background:var(--brand);color:var(--brand-ink);display:flex;flex-direction:column;gap:8px}
@@ -443,6 +451,8 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .dpwin{position:relative;border-radius:12px;background:var(--soft);overflow:hidden}
 /* the band in the middle stays still; the items turn through it */
 .dpwin::before{content:'';position:absolute;left:4px;right:4px;top:36px;height:36px;border-radius:10px;background:var(--brand);pointer-events:none}
+/* before a chapter is chosen nothing is selected: the band is only an outline, so the row under it reads in the normal ink */
+.dpick.none .dpwin::before{background:transparent;box-shadow:inset 0 0 0 2px var(--brand)}
 .dpstrip{position:relative;height:108px;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y mandatory;overscroll-behavior-x:contain;overscroll-behavior-y:auto;
   display:flex;flex-direction:column;padding:36px 4px;scrollbar-width:none;
   -webkit-mask-image:linear-gradient(to bottom,transparent,#000 22%,#000 78%,transparent);mask-image:linear-gradient(to bottom,transparent,#000 22%,#000 78%,transparent)}

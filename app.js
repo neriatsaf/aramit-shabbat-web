@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.6';
+const VERSION = '1.6.7';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -1144,6 +1144,8 @@ function bindSearch() {
   let tm = null;
   qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { dict.q = qi.value; dict.limit = DICT_STEP; dict.open = null; cdict.open = null; refill(); }, 90); };
 }
+/* the delete key draws its own mark: the ⌫ character is missing from some phone fonts (24.11.2026) */
+const DEL_SVG = '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12.5 9.5l5 5m0-5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 const SEARCH_HINT = 'חיפוש במילים, בביטויים ובמושגים';
 function renderCDict() {
   view.innerHTML = kindSeg('dkind', 'concepts') +
@@ -1154,7 +1156,6 @@ function renderCDict() {
     TOPICS.map((t, k) => '<button class="chip" data-v="' + k + '" aria-pressed="' + (cdict.topic === k) + '">' + esc(t) + '</button>').join('') + '</div></div>' : '') +
     '<p class="small muted" id="dcount"></p><div class="list" id="dlist"></div><div class="list" id="dother"></div>';
   bindSeg('dkind', v => { dictKind = v; renderDict(); });
-  $('dmeter').onclick = openProgress;
   bindSearch();
   $('dmore-opts').onclick = () => { dict.more = !dict.more; renderCDict(); };
   bindSeg('dsort', v => { cdict.sort = v; cdict.open = null; renderCDict(); });
@@ -2175,7 +2176,7 @@ function renderXW() {
     '<div class="xlow">' +
     '<div class="xtools"><button id="xw-hint"></button><button id="xw-clear">ניקוי מילה 🗑️</button><button class="pin" id="xw-pin"></button></div>' +
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
-      (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div></div>';
+      (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">' + DEL_SVG + '</button>' : '') + '</div>').join('') + '</div></div></div>';
   xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350);
   bindLabNav(g, g.b.ed, openArchXW, () => { renderXW(); }, 'lx');
   $('xw-help').onclick = openXWHelp;
@@ -2247,7 +2248,7 @@ function xwPaint() {
   /* the top line says what this board is first (the daily crossword and its number, or a personal board), then how much is
      left, and the theme last, where a narrow screen may cut it */
   const daily = g.arch || (g.day && g.b.anchor);
-  $('xw-left').innerHTML = '<b class="xname">' + (daily ? 'התשחץ היומי #' + g.b.ed + (g.arch ? ' (ארכיון)' : '') : 'לוח אישי') + '</b> ' +
+  $('xw-left').innerHTML = '<b class="xname">' + (daily ? 'התשחץ היומי #' + g.b.ed + (g.arch ? ' (ארכיון)' : '') : 'לוח אישי') + '</b> · ' +
     esc((left ? 'נשארו ' + left : 'הלוח מלא') + (daily && g.b.theme ? ', ' + g.b.theme : ', ' + g.b.words.length + ' מילים'));
   /* the button beside it goes back while the board is open, and to the summary once every cell is filled */
   const qb = $('quit'); if (qb) qb.textContent = !g.done && g.b.L.every((ch, k) => !ch || g.typed[k]) ? 'סיכום' : 'חזרה';
@@ -2548,7 +2549,7 @@ function renderWordle() {
     (g.done ? '' : '<div class="xlow"><div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + (i === 2 ? ' wide' : '') + '">' +
       (i === 2 ? '<button class="del enter" id="wd-enter">אישור</button>' : '') +
       row.split('').map(ch => '<button data-ch="' + ch + '"' + keyCls(ch) + '>' + ch + '</button>').join('') +
-      (i === 0 ? '<button class="del" id="wd-del" aria-label="מחיקה">⌫</button>' : '') + '</div>').join('') + '</div></div>') + '</div>';
+      (i === 0 ? '<button class="del" id="wd-del" aria-label="מחיקה">' + DEL_SVG + '</button>' : '') + '</div>').join('') + '</div></div>') + '</div>';
   wdFit();
   bindLabNav(g, g.ed, openArchWD, renderWordle, 'lw');
   $('quit').onclick = goBack;
@@ -2674,6 +2675,8 @@ document.addEventListener('keydown', ev => {
 let sheetOpen = false;
 function openSheet(html, full) { $('sheet-host').innerHTML = '<div class="sheet' + (full ? ' full' : '') + '" id="sheet"><div>' + html + '</div></div>'; sheetOpen = true; if (!full) $('sheet').onclick = ev => { if (ev.target.id === 'sheet') closeSheet(); }; }
 function closeSheet() { $('sheet-host').innerHTML = ''; sheetOpen = false; }
+/* Escape closes a sheet, as a tap outside it does (not the full-screen first opening) */
+document.addEventListener('keydown', ev => { if (ev.key !== 'Escape' || !sheetOpen) return; const sh = $('sheet'); if (sh && !sh.classList.contains('full') && !document.querySelector('.dpmodal')) closeSheet(); });
 function applyLook() {
   document.documentElement.setAttribute('data-size', S.settings.size || 'm');
   const dark = S.settings.theme === 'dark';
@@ -2807,7 +2810,7 @@ function two(n) { return (n < 10 ? '0' : '') + n; }
 
 function openSettings(confirmReset) {
   const st = stats(D.concat(CN)), r = S.settings.remind || { on: false, h: 20, m: 0 }, native = !!plug('App');
-  openSheet('<div class="row between"><h2>הגדרות</h2><button class="link" id="s-close">סגירה</button></div>' +
+  openSheet('<div class="row between shead"><h2>הגדרות</h2><button class="link" id="s-close">סגירה</button></div>' +
     '<div class="field"><span class="label">ערכים חדשים ביום</span><div class="seg" id="s-npd">' + [5, 10, 20, 30, 50].map(n => '<button data-v="' + n + '" aria-pressed="' + (S.settings.newPerDay === n) + '">' + n + '</button>').join('') + '</div></div>' +
     '<div class="field"><span class="label">סדר הערכים החדשים</span><div class="seg" id="s-ord"><button data-v="freq" aria-pressed="' + (S.settings.order !== 'daf') + '">מהשכיחה לנדירה</button><button data-v="daf" aria-pressed="' + (S.settings.order === 'daf') + '">לפי סדר הדפים</button></div></div>' +
     '<div class="field"><span class="label">גודל הכתב</span><div class="seg" id="s-size"><button data-v="m" aria-pressed="' + (S.settings.size === 'm') + '">רגיל</button><button data-v="l" aria-pressed="' + (S.settings.size === 'l') + '">גדול</button><button data-v="xl" aria-pressed="' + (S.settings.size === 'xl') + '">גדול מאוד</button></div></div>' +
