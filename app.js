@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.6.1';
+const VERSION = '1.6.2';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://neriatsaf.github.io/aramit-shabbat-web/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -363,7 +363,7 @@ function near(e, span) {
   for (let k = Math.max(0, e.k - span); k < Math.min(list.length, e.k + span + 1); k++) if (list[k] !== e) out.push(list[k]);
   return out;
 }
-/* level: 'easy' random, 'mid' same kind and similar frequency, 'hard' look-alikes and same-field words */
+/* wrong answers: the same kind and a similar frequency; for a word already known well (tough), look-alikes and same-field words first */
 function bare(g) { return norm(g).replace(/[^\u05d0-\u05ea ]/g, '').replace(/(^| )[והשלבכמ](?=[\u05d0-\u05ea]{3})/g, '$1'); }
 /* two glosses that differ only in number, gender or a prefix are not a fair choice */
 function tooClose(g1, g2) {
@@ -381,7 +381,7 @@ function pickDistinct(src, n) {
   for (const e of shuffle(src)) { if (picked.some(p => sameMeaning(p, e))) continue; picked.push(e); if (picked.length === n) break; }
   return picked;
 }
-function distractors(e, level, byWord) {
+function distractors(e, tough) {
   const out = [];
   function take(cands, limit) {
     for (const o of cands) {
@@ -390,33 +390,32 @@ function distractors(e, level, byWord) {
       out.push(o);
     }
   }
-  if (level === 'hard') {
+  if (tough) {
     const g = (GROUP.get(e.w) || []).map(w => BY.get(w)).filter(Boolean);
     take(shuffle(g.concat(similar(e))), 3);
   }
-  if (level !== 'easy') take(shuffle(near(e, 45)), 3);
+  take(shuffle(near(e, 45)), 3);
   take(shuffle(D), 3);
   return out;
 }
-function makeQuestion(e, level) {
-  const rev = level === 'hard' ? Math.random() < 0.5 : level === 'mid' ? Math.random() < 0.25 : false;
-  const opts = shuffle([e].concat(distractors(e, level, rev)));
+function makeQuestion(e, tough) {
+  const rev = Math.random() < (tough ? 0.5 : 0.25);
+  const opts = shuffle([e].concat(distractors(e, tough)));
   return { e, rev, opts };
 }
-/* concept questions. easy: wrong answers from other topics; mid: from the same topic; hard: same topic, and half the time from the definition to the term */
+/* concept questions: wrong answers from the same topic; for a concept already known well (tough), half the time from the definition to the term */
 function cDistinct(x, y) { return x !== y && x.ns !== y.ns && x.nw !== y.nw; }
-function makeCQuestion(c, level, pool) {
+function makeCQuestion(c, tough, pool) {
   const out = [], same = o => o.t === c.t;
   const take = (cands) => { for (const o of cands) { if (out.length >= 3) break; if (!cDistinct(o, c) || out.some(p => !cDistinct(p, o))) continue; out.push(o); } };
   if (pool) {
     /* chosen chapters: wrong answers come from those chapters first. A small chapter is completed from the rest of the glossary, same topic first */
-    if (level === 'easy') take(shuffle(pool.filter(o => !same(o)))); else take(shuffle(pool.filter(same)));
+    take(shuffle(pool.filter(same)));
     take(shuffle(pool));
     take(shuffle(CN.filter(same)));
-  } else if (level === 'easy') take(shuffle(CN.filter(o => !same(o))));
-  else take(shuffle(CN.filter(same)));
+  } else take(shuffle(CN.filter(same)));
   take(shuffle(CN));
-  return { e: c, rev: level === 'hard' && Math.random() < 0.5, opts: shuffle([c].concat(out)) };
+  return { e: c, rev: !!tough && Math.random() < 0.5, opts: shuffle([c].concat(out)) };
 }
 function optionsHtml(q, shown, picked) {
   return '<div class="opts">' + q.opts.map((o, i) => {
@@ -877,13 +876,13 @@ function renderSession() {
   if (s.review) return renderSessionReview();
   const item = s.queue[s.pos];
   if (!item) {
-    if (s.missed.length) { s.review = { qs: shuffle(s.missed).map(e => makeQ(e, 'mid', null)), pos: 0, right: 0, stage: 'ask', picked: null }; view.scrollTop = 0; return renderSessionReview(); }
+    if (s.missed.length) { s.review = { qs: shuffle(s.missed).map(e => makeQ(e, false, null)), pos: 0, right: 0, stage: 'ask', picked: null }; view.scrollTop = 0; return renderSessionReview(); }
     nav('learn', 'done', true); return;
   }
   const e = item.e, p = S.prog[pid(e)], cn = !!e.cn;
   if (!s.mode) {
     s.mode = pickMode(item);
-    if (s.mode.type === 'mcq') s.q = makeQ(e, p && p.b >= 3 ? 'hard' : 'mid', null);
+    if (s.mode.type === 'mcq') s.q = makeQ(e, !!(p && p.b >= 3), null);
     if (s.mode.type === 'flip') s.rev = !!(p && p.b >= 2 && Math.random() < 0.4);
   }
   const m = s.mode; let inner = '';
@@ -1009,7 +1008,7 @@ function reviewHtml(ms) {
     '<br><span class="src">' + esc(m.e.cn ? cSource(m.e) : countLine(m.e) + ' · לראשונה ב' + dafName(m.e.a)) + '</span></div>').join('') + '</div>';
 }
 function drillOn(list, replace) {
-  const go = () => { quiz = { level: 'mid', drill: true, qs: shuffle(list).map(e => makeQ(e, 'mid', null)), pos: 0, right: 0, wrong: [], stage: 'ask', picked: null, again: go }; nav('quiz', 'run', replace || (R.tab === 'quiz' && R.sub === 'done')); replace = false; };
+  const go = () => { quiz = { drill: true, qs: shuffle(list).map(e => makeQ(e, false, null)), pos: 0, right: 0, wrong: [], stage: 'ask', picked: null, again: go }; nav('quiz', 'run', replace || (R.tab === 'quiz' && R.sub === 'done')); replace = false; };
   go();
 }
 
@@ -1266,39 +1265,27 @@ function bindDetail(det, e) {
 
 /* ---------- quiz ---------- */
 let quiz = null;
-const quizCfg = { level: 'mid', len: 10, mode: 'lex' };
-const LEVELS = { easy: ['קל', 'שלוש תשובות שגויות אקראיות מהמאגר'], mid: ['בינוני', 'תשובות שגויות מאותו סוג ובשכיחות דומה'], hard: ['קשה', 'מילים שדומות בכתיב או קרובות במשמעות, ולפעמים מהפירוש אל המילה'] };
-const CLEVELS = { easy: 'התשובות השגויות לקוחות מנושאים אחרים', mid: 'כל התשובות מאותו נושא', hard: 'כל התשובות מאותו נושא, ולפעמים מן ההגדרה אל המושג' };
-const CLEVELS_PK = { easy: 'התשובות השגויות לקוחות מן הפרקים או הדפים שנבחרו, קודם מנושאים אחרים', mid: 'התשובות השגויות לקוחות מן הפרקים או הדפים שנבחרו, קודם מאותו נושא', hard: 'התשובות השגויות לקוחות מן הפרקים או הדפים שנבחרו, קודם מאותו נושא, ולפעמים השאלה היא מן ההגדרה אל המושג' };
+const quizCfg = { len: 10, mode: 'lex' };
 /* in a choice by chapters or by pages, wrong answers for a concept come from the chosen part first, and a small part is completed from the rest of the glossary.
-   For a word the wrong answers always come from the whole deck, by the level: that is what makes a look-alike a look-alike */
+   For a word the wrong answers always come from the whole deck: that is what makes a look-alike a look-alike */
 function narrowed() { return (SC.by === 'perek' && SC.pereks.length > 0) || SC.by === 'daf'; }
-function makeQ(e, level, cpool) { return e.cn ? makeCQuestion(e, level, cpool) : makeQuestion(e, level); }
-function levelNote() {
-  const c = (narrowed() ? CLEVELS_PK : CLEVELS)[quizCfg.level];
-  if (SC.kind === 'words') return LEVELS[quizCfg.level][1];
-  if (SC.kind === 'concepts') return c;
-  return 'במילים: ' + LEVELS[quizCfg.level][1] + '. במושגים: ' + c;
-}
-function startQuiz(items, level, extra) {
+function makeQ(e, tough, cpool) { return e.cn ? makeCQuestion(e, tough, cpool) : makeQuestion(e, tough); }
+function startQuiz(items, extra) {
   const cpool = narrowed() && !(extra && extra.daily) ? items.filter(e => e.cn) : null;
-  quiz = Object.assign({ kind: SC.kind, level, qs: items.map(e => makeQ(e, level, cpool && cpool.length ? cpool : null)), pos: 0, right: 0, wrong: [], stage: 'ask', picked: null }, extra || {});
+  quiz = Object.assign({ kind: SC.kind, qs: items.map(e => makeQ(e, false, cpool && cpool.length ? cpool : null)), pos: 0, right: 0, wrong: [], stage: 'ask', picked: null }, extra || {});
   nav('quiz', 'run', R.tab === 'quiz' && R.sub === 'done');
 }
-/* from the whole store, the easy and middle levels ask only the chosen store (the common words); the expanded store,
-   rare words included, joins at the hard level */
-function quizItems() { const all = scopeItems(); return SC.by === 'all' && quizCfg.level !== 'hard' ? all.filter(e => e.cn || !e.ext) : all; }
-/* the quiz has no levels to choose: every quiz asks at the middle level (look-alike answers from the whole deck) */
-const QUIZ_LEVEL = 'mid';
+/* no levels anywhere (24.11.2026). From the whole store the quiz asks only the chosen store (the common words);
+   the rare words of the expanded store come only with a choice by chapters or pages */
+function quizItems() { const all = scopeItems(); return SC.by === 'all' ? all.filter(e => e.cn || !e.ext) : all; }
 function lenCard(n, noun) {
   return qCard('מספר שאלות', '<div class="seg" id="qlen">' + [10, 20, 40].map(k => '<button data-v="' + k + '" aria-pressed="' + (quizCfg.len === k) + '">' + k + '</button>').join('') + '</div>' +
     (n && n < quizCfg.len ? '<p class="small muted">בבחירה הזו יש ' + noun(n) + ', וזה יהיה אורך החידון.</p>' : ''));
 }
 function renderQuizSetup() {
   if (quizCfg.mode === 'content' && CT.length) return renderTQSetup();
-  quizCfg.level = QUIZ_LEVEL;
   if (SC.kind === 'both') { SC.kind = 'words'; saveSc(); }
-  const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + QUIZ_LEVEL, b = S.best[key];
+  const src = quizItems(), n = src.length, key = { words: 'quiz-', concepts: 'cquiz-', both: 'mquiz-' }[SC.kind] + 'mid', b = S.best[key];
   const few = narrowed() && SC.kind !== 'words' && src.filter(e => e.cn).length < 4 && src.some(e => e.cn);
   view.innerHTML = '<div class="qsetup"><h2>חידון אמריקאי</h2>' + modeSeg() + scopeHtml(true, true) +
     (few ? '<p class="small muted">בבחירה הזו יש פחות מארבעה מושגים, ולכן התשובות השגויות יושלמו משאר המילון, קודם מאותו נושא.</p>' : '') +
@@ -1308,7 +1295,7 @@ function renderQuizSetup() {
   bindMode(); bindScope(renderQuizSetup);
   bindSeg('qlen', v => { quizCfg.len = +v; renderQuizSetup(); });
   const len = quizCfg.len;
-  const go = () => { const items = quizItems(); if (!items.length) { toast('אין ערכים בבחירה הזו'); return; } startQuiz(sample(items, Math.min(len, items.length)), QUIZ_LEVEL, { bestKey: key, again: go }); };
+  const go = () => { const items = quizItems(); if (!items.length) { toast('אין ערכים בבחירה הזו'); return; } startQuiz(sample(items, Math.min(len, items.length)), { bestKey: key, again: go }); };
   $('qstart').onclick = go;
 }
 /* the short daily round that the reminder opens: ten entries, mistakes first, then what is due, then what was learned, then anything */
@@ -1317,7 +1304,7 @@ function startDaily() {
   const add = list => { for (const e of shuffle(list)) { if (take.length >= 10) return; if (!seen.has(e)) { seen.add(e); take.push(e); } } };
   add(all.filter(e => S.miss[pid(e)])); add(all.filter(isDue)); add(all.filter(e => S.prog[pid(e)])); add(all);
   if (sheetOpen && S.onboarded) closeSheet();
-  startQuiz(shuffle(take), 'mid', { kind: 'both', daily: true, again: startDaily });
+  startQuiz(shuffle(take), { kind: 'both', daily: true, again: startDaily });
 }
 function renderQuiz() {
   const z = quiz, q = z.qs[z.pos];
@@ -1344,7 +1331,7 @@ function finishQuiz() {
 }
 function renderQuizDone() {
   const z = quiz, n = z.answered || 0, m = z.wrong.length;
-  view.innerHTML = '<div class="result"><div class="big">' + z.right + '/' + n + '</div><p>' + (n ? Math.round(z.right / n * 100) + '% נכון' + (z.kind === 'content' ? ', חידון תוכן' : z.daily ? ', חזרה יומית' : ', רמה: ' + LEVELS[z.level][0]) : 'לא נענו שאלות') + '</p>' +
+  view.innerHTML = '<div class="result"><div class="big">' + z.right + '/' + n + '</div><p>' + (n ? Math.round(z.right / n * 100) + '% נכון' + (z.kind === 'content' ? ', חידון תוכן' : z.daily ? ', חזרה יומית' : '') : 'לא נענו שאלות') + '</p>' +
     (m && z.kind !== 'content' ? '<p class="small muted">הערכים שטעית בהם נכנסו לרשימת הטעויות החוזרות, ואפשר לתרגל אותה בחידון ובלימוד.</p>' : '') +
     doneButtons('עוד סיבוב', m) + '<button class="link" id="back">' + (z.drill ? 'חזרה לרשימת הטעויות' : 'חזרה') + '</button></div>';
   $('again').onclick = () => { if (z.again) z.again(); else { quiz = null; goBack(); } };
@@ -1364,13 +1351,11 @@ function renderQuizReview() {
 /* ---------- content quiz: questions on the course of the sugyot ---------- */
 const CTOPICS = (window.CTOPICS || []).map(t => Array.isArray(t) ? { n: t[0], pk: t[1] } : { n: t, pk: -1 });
 const CT = (window.CQ || []).map((r, i) => ({ i, a: r[0], t: r[1], lv: r[2], q: r[3], ans: r[4], dis: [r[5], r[6], r[7]], quote: r[8], src: r[9], basis: r[10], note: r[11], pk: Number.isInteger(r[12]) ? r[12] : pkOf(r[0]) }));
-const CLV = ['קלה', 'בינונית', 'קשה'];
 const CT_D0 = CT.length ? dafNum(Math.min.apply(null, CT.map(x => x.a))) : 2, CT_D1 = CT.length ? dafNum(Math.max.apply(null, CT.map(x => x.a))) : 2;
-const TQ = { level: -1, by: 'all', topic: -1, d0: CT_D0, d1: CT_D1, pereks: [] };
-function saveTq() { S.settings.tq = { level: TQ.level, by: TQ.by, topic: TQ.topic, d0: TQ.d0, d1: TQ.d1, pereks: TQ.pereks.slice() }; save(); }
+const TQ = { by: 'all', topic: -1, d0: CT_D0, d1: CT_D1, pereks: [] };
+function saveTq() { S.settings.tq = { by: TQ.by, topic: TQ.topic, d0: TQ.d0, d1: TQ.d1, pereks: TQ.pereks.slice() }; save(); }
 function restoreTq() {
   const c = S.settings.tq || {};
-  TQ.level = c.level === 0 || c.level === 1 || c.level === 2 ? c.level : -1;
   TQ.by = c.by === 'topic' || c.by === 'daf' || c.by === 'perek' ? c.by : 'all';
   TQ.pereks = (Array.isArray(c.pereks) ? c.pereks : []).filter((k, i, l) => Number.isInteger(k) && k >= 0 && k < PEREKS.length && l.indexOf(k) === i).sort((x, y) => x - y);
   TQ.topic = Number.isInteger(c.topic) && c.topic >= 0 && c.topic < CTOPICS.length ? c.topic : -1;
@@ -1379,7 +1364,7 @@ function restoreTq() {
   quizCfg.mode = S.settings.qmode === 'content' && CT.length ? 'content' : 'lex';
 }
 function tqWhere(x) { return TQ.by === 'perek' ? (!TQ.pereks.length || TQ.pereks.indexOf(x.pk) >= 0) : TQ.by === 'topic' ? (TQ.topic < 0 || x.t === TQ.topic) : TQ.by === 'daf' ? (dafNum(x.a) >= TQ.d0 && dafNum(x.a) <= TQ.d1) : true; }
-function tqItems() { return CT.filter(x => (TQ.level < 0 || x.lv === TQ.level) && tqWhere(x)); }
+function tqItems() { return CT.filter(tqWhere); }
 function nQuestions(n) { return n === 1 ? 'שאלה אחת' : n + ' שאלות'; }
 function ctSource(x) { return ['גמרא', 'משנה', 'משנה וגמרא'][x.src] + ', ' + dafName(x.a) + ', פרק ' + ordPk(x.pk) + ' (' + PEREKS[x.pk][0] + ')'; }
 /* the switch at the top of the quiz screen: the three stores of the lexicon, and the content of the sugya */
@@ -1396,8 +1381,7 @@ function bindMode() {
   });
 }
 function renderTQSetup() {
-  TQ.level = -1;   /* no levels: questions of every level */
-  const items = tqItems(), n = items.length, b = S.best.tquiz, inLevel = CT.filter(x => TQ.level < 0 || x.lv === TQ.level);
+  const items = tqItems(), n = items.length, b = S.best.tquiz;
   let sub = '';
   if (TQ.by === 'perek') sub = '<div class="pkpick" id="tq-pk"><button class="chip" data-v="-1" aria-pressed="' + (TQ.pereks.length === 0) + '">כל הפרקים</button>' +
     PEREKS.map((pk, k) => { const c = inLevel.filter(x => x.pk === k).length; return '<button class="chip" data-v="' + k + '" aria-pressed="' + (TQ.pereks.indexOf(k) >= 0) + '"' + (c ? '' : ' disabled') + '>' + ordPk(k) + '. ' + esc(pk[0]) + ' (' + c + ')</button>'; }).join('') + '</div>' +
@@ -1443,7 +1427,7 @@ function ctAfterHtml(x) {
 }
 function renderTQ() {
   const z = quiz, q = z.qs[z.pos], x = q.ct, shown = z.stage === 'shown';
-  view.innerHTML = '<div class="row between"><span class="small muted">שאלה ' + (z.pos + 1) + ' מתוך ' + z.qs.length + ' · ' + CLV[x.lv] + '</span><button class="link" id="quit">סיום</button></div>' +
+  view.innerHTML = '<div class="row between"><span class="small muted">שאלה ' + (z.pos + 1) + ' מתוך ' + z.qs.length + '</span><button class="link" id="quit">סיום</button></div>' +
     '<div class="progress"><i style="width:' + Math.round(z.pos / z.qs.length * 100) + '%"></i></div>' +
     '<section class="card"><span class="tag">' + esc(CTOPICS[x.t].n) + '</span><p class="qtext">' + esc(x.q) + '</p>' +
     '<div class="opts">' + q.opts.map((o, i) => {
@@ -1468,7 +1452,7 @@ function renderGames() {
   const bm = S.best.match, bb = S.best.blitz30, bf = S.best.fill;
   gameCfg.scope = 'all'; gameCfg.kind = 'words';
   view.innerHTML = '<h2>משחקים</h2><div class="menu">' +
-    '<button id="g-xw"><b>תשחץ אישי</b><span>לוח חדש מהמילים שתבחר: כל המאגר, מה שלמדת או לפי פרקים, וברמת הקושי שתבחר</span></button>' +
+    '<button id="g-xw"><b>תשחץ אישי</b><span>לוח חדש מהמילים שתבחר: כל המאגר, מה שלמדת או לפי פרקים</span></button>' +
     '<button id="g-match"><b>התאמת זוגות</b><span>לחבר שש מילים בארמית לפירוש שלהן, כמה שיותר מהר</span>' + (bm ? '<em>שיא: ' + bm + ' שנ\'</em>' : '') + '</button>' +
     '<button id="g-blitz"><b>אתגר 30 שניות</b><span>לזהות כמה שיותר מילים לפני שהזמן נגמר, עם ניקוד ורצף</span>' + (bb ? '<em>שיא: ' + bb + '</em>' : '') + '</button>' +
     '<button id="g-fill"><b>השלמת ביטויים</b><span>ביטוי של שקלא וטריא עם מילה חסרה. איזו מילה משלימה אותו?</span>' + (bf ? '<em>שיא: ' + bf + '/10</em>' : '') + '</button></div>';
@@ -1540,7 +1524,7 @@ function startBlitz() {
     }
   }, 1000));
 }
-function nextBlitz() { const g = game; let e; do { e = g.src[Math.floor(Math.random() * g.src.length)]; } while (g.q && g.src.length > 1 && e === g.q.e); g.q = makeQuestion(e, 'mid'); g.q.rev = false; g.q.gmode = 'speed'; g.q.opts = shuffle([e].concat(distractors(e, 'mid', false))); g.flash = null; g.lock = false; }
+function nextBlitz() { const g = game; let e; do { e = g.src[Math.floor(Math.random() * g.src.length)]; } while (g.q && g.src.length > 1 && e === g.q.e); g.q = makeQuestion(e, false); g.q.rev = false; g.q.gmode = 'speed'; g.q.opts = shuffle([e].concat(distractors(e, false))); g.flash = null; g.lock = false; }
 function renderBlitz() {
   const g = game, q = g.q;
   view.innerHTML = '<div class="hud"><div><b id="b-time">' + Math.max(0, g.left) + '</b><span>שניות</span></div><div><b>' + g.score + '</b><span>נקודות</span></div><div><b>' + g.streak + '</b><span>רצף</span></div></div>' +
@@ -1744,32 +1728,26 @@ function rootLeak(ans, clue) {
   return '';
 }
 /* personal boards draw on the chosen store; a board by chapters may also take words of the expanded store from those chapters.
-   The level ranks the chosen store by frequency, and every word of the expanded store counts as hard */
+   No levels (24.11.2026): from the whole store only the chosen store, without the rare words of the expanded store */
 const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
 const XW_ALL = WORDS.filter(e => /^[א-ת]{3,7}$/.test(e.w) && !(e.ext && /בעל כמה פירושים/.test(e.m0)) && xwOk(e, e.cn ? e.s : short(e), 34));
 BK.forEach(e => { if (/^[א-ת]{3,7}$/.test(e.w) && xwOk(e, e.s, 40)) XW_ALL.push(e); });
-const XW_CORE = XW_ALL.filter(e => !e.ext && !e.bk);
-const XW_RANK = new Map(XW_CORE.slice().sort((x, y) => y.c - x.c).map((e, i) => [e, i / Math.max(1, XW_CORE.length - 1)]));
-XW_ALL.forEach(e => { if (e.ext) XW_RANK.set(e, 1); else if (e.bk) XW_RANK.set(e, 0.5); });
-const XW_LV = { all: 'הכול', easy: 'קל', mid: 'בינוני', hard: 'קשה' };
-const xwCfg = { src: 'all', lv: 'all', pereks: [] };
+const xwCfg = { src: 'all', pereks: [] };
 function restoreXw() {
   const c = S.settings.xw || {};
   xwCfg.src = c.src === 'learned' || c.src === 'pk' ? c.src : 'all';
-  xwCfg.lv = XW_LV[c.lv] ? c.lv : 'all';
   xwCfg.pereks = (Array.isArray(c.pereks) ? c.pereks : []).filter((k, i, l) => Number.isInteger(k) && k >= 0 && k < PEREKS.length && l.indexOf(k) === i).sort((x, y) => x - y);
 }
-function saveXw() { S.settings.xw = { src: xwCfg.src, lv: xwCfg.lv, pereks: xwCfg.pereks.slice() }; save(); }
-function xwLevelOk(e) { const r = XW_RANK.get(e); return xwCfg.lv === 'easy' ? r < 1 / 3 : xwCfg.lv === 'mid' ? r >= 1 / 3 && r < 2 / 3 : xwCfg.lv === 'hard' ? r >= 2 / 3 : true; }
+function saveXw() { S.settings.xw = { src: xwCfg.src, pereks: xwCfg.pereks.slice() }; save(); }
 function xwSrcOk(e, k) {
   if (e.bk) return xwCfg.src === 'all';
   if (e.ext && xwCfg.src === 'learned') return false;
-  if (e.ext && xwCfg.src === 'all' && xwCfg.lv !== 'hard') return false;
+  if (e.ext && xwCfg.src === 'all') return false;
   if (xwCfg.src === 'learned') return !!S.prog[pid(e)];
   if (xwCfg.src === 'pk') return k === undefined ? (!xwCfg.pereks.length || xwCfg.pereks.some(p => e.pkm & (1 << p))) : !!(e.pkm & (1 << k));
   return true;
 }
-function xwPool() { return XW_ALL.filter(e => xwSrcOk(e) && xwLevelOk(e) && (SC.by !== 'daf' || xwCfg.src !== 'all' || (!e.bk && inScope(e)))); }
+function xwPool() { return XW_ALL.filter(e => xwSrcOk(e) && (SC.by !== 'daf' || xwCfg.src !== 'all' || (!e.bk && inScope(e)))); }
 
 /* where a word sits: its cells in reading order, and the cell before its start and after its end */
 function xwCells(t, cr, cc, n) {
@@ -1919,25 +1897,24 @@ function xwTopHtml() {
   const sv = xwLoad();
   return sv && !sv.b.anchor ? '<button class="btn ghost wide" id="xw-resume">המשך הלוח השמור (' + mmss(sv.secs) + ')</button>' : '';
 }
-/* the setup: where the words come from, and how hard they are */
+/* the setup: where the words come from */
 function renderXWSetup() {
-  const lvPool = XW_ALL.filter(xwLevelOk), n = xwPool().length;
+  const n = xwPool().length;
   let sub = '';
   if (xwCfg.src === 'pk') sub = '<div class="pkgrid" id="xw-pk"><button data-v="-1" aria-pressed="' + (xwCfg.pereks.length === 0) + '"><span>כל הפרקים</span></button>' +
-    PEREKS.map((pk, k) => { const c = lvPool.filter(e => xwSrcOk(e, k)).length; return '<button data-v="' + k + '" aria-pressed="' + (xwCfg.pereks.indexOf(k) >= 0) + '"' + (c ? '' : ' disabled') + '><span>' + ordPk(k) + '. ' + esc(pk[0]) + '</span><b>' + c + '</b></button>'; }).join('') + '</div>';
+    PEREKS.map((pk, k) => { const c = XW_ALL.filter(e => xwSrcOk(e, k)).length; return '<button data-v="' + k + '" aria-pressed="' + (xwCfg.pereks.indexOf(k) >= 0) + '"' + (c ? '' : ' disabled') + '><span>' + ordPk(k) + '. ' + esc(pk[0]) + '</span><b>' + c + '</b></button>'; }).join('') + '</div>';
   view.innerHTML = '<div class="row between"><h2>תשחץ אישי</h2><button class="link" id="xw-back">חזרה למשחקים</button></div>' +
     xwTopHtml() +
-    '<p class="small muted">בחר מאגר מילים ורמת קושי.' + (SC.by === 'daf' ? ' מכל המאגר נלקחות רק מילים מהדפים שאתה אוחז בהם (' + esc(holdLabel()) + ').' : '') + '</p>' +
+    '<p class="small muted">בחר מאגר מילים.' + (SC.by === 'daf' ? ' מכל המאגר נלקחות רק מילים מהדפים שאתה אוחז בהם (' + esc(holdLabel()) + ').' : '') + '</p>' +
     '<div class="field"><span class="label">מאגר מילים</span><div class="seg" id="xw-src">' +
     [['all', 'כל המילים'], ['learned', 'שנלמדו'], ['pk', 'לפי פרקים']].map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (xwCfg.src === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>' +
-    '<div class="field"><span class="label">רמת קושי</span><div class="seg" id="xw-lv">' + Object.keys(XW_LV).map(k => '<button data-v="' + k + '" aria-pressed="' + (xwCfg.lv === k) + '">' + XW_LV[k] + '</button>').join('') + '</div></div>' + sub +
-    '<div class="xwgo"><p class="small' + (n >= XW_MIN_POOL ? ' muted' : ' strong') + '">' + (n >= XW_MIN_POOL ? n + ' מילים מתאימות. קל: השכיחות במסכת, קשה: הנדירות.' : (n ? 'רק ' + n + ' מילים מתאימות. צריך לפחות ' + XW_MIN_POOL + '.' : 'אין מילים בבחירה הזו.')) + '</p>' +
+    sub +
+    '<div class="xwgo"><p class="small' + (n >= XW_MIN_POOL ? ' muted' : ' strong') + '">' + (n >= XW_MIN_POOL ? n + ' מילים מתאימות.' : (n ? 'רק ' + n + ' מילים מתאימות. צריך לפחות ' + XW_MIN_POOL + '.' : 'אין מילים בבחירה הזו.')) + '</p>' +
     '<button class="btn wide" id="xw-go"' + (n >= XW_MIN_POOL ? '' : ' disabled') + '>התחל תשחץ</button></div>';
   const box = $('xw-pk');
   if (box) { const over = view.scrollHeight - view.clientHeight; if (over > 0) box.style.maxHeight = Math.max(88, box.offsetHeight - over - 4) + 'px'; }
   const done = () => { saveXw(); renderXWSetup(); };
   bindSeg('xw-src', v => { xwCfg.src = v; done(); });
-  bindSeg('xw-lv', v => { xwCfg.lv = v; done(); });
   const pk = $('xw-pk'); if (pk) pk.querySelectorAll('button').forEach(b => { b.onclick = () => {
     const k = +b.dataset.v;
     if (k < 0) xwCfg.pereks = []; else { const at = xwCfg.pereks.indexOf(k); if (at >= 0) xwCfg.pereks.splice(at, 1); else xwCfg.pereks.push(k); xwCfg.pereks.sort((x, y) => x - y); }
@@ -1962,7 +1939,7 @@ function startXW() {
     xwOpen(xwGame(b));
   });
 }
-/* the daily board: all words, every level, the same for everyone on the same date */
+/* the daily board: all words, the same for everyone on the same date */
 /* a daily board left open past midnight: it is closed, so the day that ended keeps its record and today starts clean */
 function xwStale() { return !!(xg && xg.type === 'xw' && xg.day && xg.b.anchor && !xg.done && xg.day !== localDay()); }
 /* the archive: every edition from #1 to yesterday, to solve again; a board or word solved here does not touch the streak or lifelines.
@@ -2981,7 +2958,7 @@ TABS.forEach(t => { if (t !== R.tab) paint(t); });
 if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
 else { const sv = xwLoad(); if (sv && sv.open) { xg = sv; nav('xw', 'board'); } }
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = {}; for (const lv of ['easy', 'mid', 'hard']) { const q0 = quizCfg.level, x0 = xwCfg.lv; quizCfg.level = lv; xwCfg.lv = lv; r['quiz-' + lv] = quizItems(); r['xw-' + lv] = xwPool(); quizCfg.level = q0; xwCfg.lv = x0; } r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()] };
 
 /* hardware back button inside the Android app */
 try {
