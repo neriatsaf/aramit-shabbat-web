@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -69,15 +69,19 @@ const KNOWN_BOX = 4;
 
 /* ---------- state ---------- */
 const KEY = 'aramit-shabbat-v1';
+const SYNC = window.PshitaSync || null; /* the optional cloud backup (sync.js); idle while its Firebase config is empty */
 /* schemaVersion: 1 (or missing) up to 1.6, the Leitner stages only; 2 from 1.7, every entry also carries its FSRS state (see fsrsOf) */
 const SCHEMA = 2;
-const S = { prog: {}, edits: {}, fav: {}, miss: {}, settings: { order: 'freq', newPerDay: 10, size: 'm' }, best: {}, onboarded: false, schemaVersion: SCHEMA };
+/* gen and at serve the cloud sync (sync.js): gen rises on a full reset, so the reset wins over older copies on other devices;
+   at is the moment of the last save */
+const S = { prog: {}, edits: {}, fav: {}, miss: {}, settings: { order: 'freq', newPerDay: 10, size: 'm' }, best: {}, onboarded: false, schemaVersion: SCHEMA, gen: 0, at: 0 };
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || 'null');
     if (raw) {
       S.prog = raw.prog || {}; S.edits = raw.edits || {}; S.best = raw.best || {}; S.fav = raw.fav || {}; S.miss = raw.miss || {}; S._cstat = raw.cstat || null;
       Object.assign(S.settings, raw.settings || {}); S.onboarded = !!raw.onboarded; S.schemaVersion = raw.schemaVersion || 1;
+      S.gen = Number.isInteger(raw.gen) ? raw.gen : 0; S.at = Number.isFinite(raw.at) ? raw.at : 0;
       migrate();
     }
     launchReset(!!raw);
@@ -125,7 +129,7 @@ function migrate() {
 let ver = 0; /* rises on every save: a panel drawn at an older value may show stale progress */
 /* in a private window or with storage blocked the app keeps working from memory, and says so once */
 let saveWarned = false;
-function save() { ver++; mirrorSoon(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!saveWarned) { saveWarned = true; toast('לא ניתן לשמור במכשיר הזה (גלישה פרטית?). ההתקדמות תישמר רק עד סגירת הדף'); } } }
+function save(quiet) { ver++; S.at = Date.now(); mirrorSoon(); if (!quiet && SYNC) SYNC.dirty(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { if (!saveWarned) { saveWarned = true; toast('לא ניתן לשמור במכשיר הזה (גלישה פרטית?). ההתקדמות תישמר רק עד סגירת הדף'); } } }
 
 /* ---------- helpers ---------- */
 /* the four main screens live side by side on one rail, and each keeps what it shows until it needs redrawing.
@@ -3346,6 +3350,51 @@ async function syncReminder(ask) {
 }
 function two(n) { return (n < 10 ? '0' : '') + n; }
 
+/* ---------- the cloud backup (sync.js, optional) ----------
+   Signed in with Google, the state is merged with the copy in the cloud after a change and when the app comes back to the
+   front; signed out, or with no config, nothing here does anything. localStorage stays the source of truth */
+function syncState() { return { prog: S.prog, edits: S.edits, best: S.best, fav: S.fav, miss: S.miss, settings: S.settings, schemaVersion: S.schemaVersion, onboarded: S.onboarded, gen: S.gen || 0, at: S.at || 0 }; }
+function syncPut(m) {
+  S.prog = m.prog; S.edits = m.edits; S.best = m.best; S.fav = m.fav; S.miss = m.miss;
+  S.settings = Object.assign({ order: 'freq', newPerDay: 10, size: 'm' }, m.settings);
+  S.onboarded = S.onboarded || !!m.onboarded; S.schemaVersion = m.schemaVersion || S.schemaVersion; S.gen = m.gen || 0;
+  migrate(); save(true); applyLook(); restoreSc(); restoreTq(); restoreXw();
+  /* a round, quiz or game in play goes on; the screens are drawn again when nothing is in the middle */
+  if (!session && !quiz && !game && !R.sub && !sheetOpen) render(true);
+}
+function syncWhen(ms) {
+  const d = new Date(ms), t = two(d.getHours()) + ':' + two(d.getMinutes());
+  return dayOf(d) === dayOf(new Date()) ? 'היום ב־' + t : 'ב־' + d.getDate() + '.' + (d.getMonth() + 1) + ' ב־' + t;
+}
+function syncHtml() {
+  const z = SYNC.status();
+  if (!z.user) return '<span class="label">גיבוי בענן</span><button class="btn wide" id="s-sync-in">התחברות עם Google</button>' +
+    '<p class="small muted">לא חובה. אחרי ההתחברות ההתקדמות נשמרת גם בענן ומסתנכרנת בין המכשירים שלך, למשל בין הטלפון למחשב. בלי התחברות הכול נשמר במכשיר בלבד, כמו עד היום.</p>';
+  const line = z.busy ? 'מסנכרן...' : z.offline ? 'אין חיבור לרשת. הסנכרון ימשיך כשהרשת תחזור' : z.error ? z.error : z.last ? 'סונכרן לאחרונה ' + syncWhen(z.last) : 'עוד לא סונכרן';
+  return '<span class="label">גיבוי בענן</span>' +
+    '<p>החשבון המחובר' + (z.user.name ? ': <b>' + esc(z.user.name) + '</b>' : '') + '</p>' +
+    (z.user.email ? '<p class="small muted sync-mail" dir="ltr">' + esc(z.user.email) + '</p>' : '') +
+    '<p class="small muted" id="s-sync-st">' + line + '</p>' +
+    '<div class="two"><button class="btn line" id="s-sync-now">סנכרון עכשיו</button><button class="btn line" id="s-sync-out">התנתקות</button></div>';
+}
+function bindSync() {
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on('s-sync-in', () => {
+    SYNC.signIn().then(ok => { if (ok) track('sync_signin'); }, e => {
+      const c = String((e && (e.code || e.message)) || e);
+      if (/popup-closed|cancelled-popup/.test(c)) return;
+      toast(/offline/.test(c) ? 'אין חיבור לרשת. אפשר להתחבר כשהרשת תחזור' : 'לא הצלחתי להתחבר. ייתכן שהרשת חוסמת את שירותי גוגל');
+    });
+  });
+  on('s-sync-now', () => { SYNC.syncNow().then(ok => { const z = SYNC.status(); toast(ok ? 'הנתונים סונכרנו' : z.offline ? 'אין חיבור לרשת. הסנכרון ימשיך כשהרשת תחזור' : z.error || 'הסנכרון לא הצליח, ננסה שוב בהמשך'); }); });
+  on('s-sync-out', () => { SYNC.signOut().then(() => { track('sync_signout'); toast('התנתקת. ההתקדמות נשארת במכשיר'); }); });
+}
+function syncWhere() { return SYNC && SYNC.status().user ? 'ההתקדמות נשמרת במכשיר, ועותק שלה נשמר בגיבוי בענן בחשבון שלך.' : 'ההתקדמות נשמרת במכשיר בלבד.'; }
+function syncRedraw() {
+  const el = document.querySelector('#sheet-host #s-sync'); if (el) { el.innerHTML = syncHtml(); bindSync(); }
+  const wh = document.querySelector('#sheet-host #s-where'); if (wh) wh.textContent = syncWhere();
+}
+
 function openSettings(confirmReset) {
   const st = stats(D.concat(CN)), r = S.settings.remind || { on: false, h: 20, m: 0 }, native = !!plug('App');
   openSheet('<div class="row between shead"><h2>הגדרות</h2><button class="link" id="s-close">סגירה</button></div>' +
@@ -3365,6 +3414,7 @@ function openSettings(confirmReset) {
     '<input type="file" id="s-file" accept=".json,application/json,text/plain" hidden>' +
     '<p class="small muted">קובץ הגיבוי כולל את ההתקדמות, המועדפים, רשימת הטעויות, השיאים, ההגדרות והפירושים שערכת.</p>' +
     '<button class="link start" id="s-text">גיבוי ושחזור כטקסט</button></div>' +
+    (SYNC && SYNC.configured() ? '<div class="field" id="s-sync">' + syncHtml() + '</div>' : '') +
     betaLabHtml() +
     '<button class="btn line wide" id="s-help">איך לומדים באפליקציה</button>' +
     '<a class="btn line wide" id="s-feedback" href="' + feedbackUrl() + '">דיווח על טעות</a>' +
@@ -3378,7 +3428,7 @@ function openSettings(confirmReset) {
     '<p>הפירושים קצרים ונועדו לעזור בקריאה שוטפת. הם אינם תחליף לרש"י ולמפרשים, ובמילה שיש לה כמה מובנים ייתכן שהפירוש לא יתאים לכל מקום. אפשר לתקן כל פירוש במילון, והתיקון נשמר במכשיר שלך.</p>' +
     '<p>הספירה נעשתה על נוסח הגמרא שבספריא (מהדורת ויליאם דוידסון, קורן). הגופנים: פרנק ריהל ליברה ואסיסטנט, ברישיון פתוח (OFL).</p>' +
     '<p>בוורדל אפשר לנחש גם מילים עבריות רגילות. רשימת המילים לקוחה ממאגר שכיחות המילים של הרמיט דייב, שנבנה מכתוביות סרטים (OpenSubtitles), ברישיון CC BY-SA 4.0.</p>' +
-    '<p>האפליקציה פועלת בלי רשת ואינה אוספת שום מידע. ההתקדמות נשמרת במכשיר בלבד. גרסה ' + VERSION + '</p>' +
+    '<p>האפליקציה פועלת בלי רשת ואינה אוספת שום מידע. <span id="s-where">' + syncWhere() + '</span> גרסה ' + VERSION + '</p>' +
     '<p class="credit">נוסח הגמרא על פי מהדורת ויליאם דוידסון בספריא (CC-BY-NC)</p></div>');
   $('s-close').onclick = closeSheet;
   bindSeg('s-npd', v => { S.settings.newPerDay = +v; save(); openSettings(); render(); });
@@ -3405,11 +3455,11 @@ function openSettings(confirmReset) {
   };
   $('s-text').onclick = () => openBackupText('');
   $('s-help').onclick = () => openOnboarding(0);
-  bindBetaLab();
+  bindBetaLab(); bindSync();
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('s-reset', () => openSettings(true));
   on('s-reset-no', () => openSettings());
-  on('s-reset-yes', () => { S.prog = {}; S.edits = {}; S.best = {}; S.fav = {}; S.miss = {}; save(); closeSheet(); toast('ההתקדמות אופסה'); session = null; quiz = null; game = null; nav('learn', null, true); });
+  on('s-reset-yes', () => { S.prog = {}; S.edits = {}; S.best = {}; S.fav = {}; S.miss = {}; S.gen = (S.gen || 0) + 1; save(); closeSheet(); toast('ההתקדמות אופסה'); session = null; quiz = null; game = null; nav('learn', null, true); });
 }
 /* 🛠️ the beta lab, in the APK only: move the date to any edition, or a day on, to try the daily boards, the archive and the lifelines */
 function setShift(n) { try { if (n) localStorage.setItem('aramit-beta-shift', String(n)); else localStorage.removeItem('aramit-beta-shift'); } catch (e) { /* ignore */ } }
@@ -3532,6 +3582,10 @@ else if (/"open":true/.test(localStorage.getItem(XKEY) || '')) need(XWN).then(()
 /* the files of the main screens, right after the first one is drawn; the screen shown is drawn again with them */
 setTimeout(() => need(['occ'].concat(XWN)).then(() => { if (!R.sub && !sheetOpen && !(drawn[R.tab] && drawn[R.tab].ver === ver)) render(false); }, () => { /* offline before the first visit ended */ }), 0);
 idbCheck(lsEmpty); askPersist();
+if (SYNC) {
+  if (/[?&]test\b/.test(location.search) && /[?&]syncfake\b/.test(location.search)) SYNC._test.fake();
+  SYNC.init({ get: syncState, put: syncPut, changed: syncRedraw, version: VERSION });
+}
 try { if (sessionStorage.getItem('pshita-restored')) { sessionStorage.removeItem('pshita-restored'); toast('ההתקדמות שוחזרה מהעותק השמור במכשיר'); } } catch (e) { /* ignore */ }
 setTimeout(iosHint, 2500);
 /* a read-only look inside, for the automated tests only */
