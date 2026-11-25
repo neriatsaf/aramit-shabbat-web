@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -700,7 +700,7 @@ function paint(tab) {
       else if (sub === 'match' && game) renderMatch();
       else if (sub === 'blitz' && game) renderBlitz();
       else if (sub === 'fill' && game) renderFill();
-      else if (sub === 'locmode') renderLocMode();
+      else if (sub === 'locintro' || sub === 'locmode') renderLocIntro();
       else if (sub === 'loc' && game && game.type === 'loc') renderLoc();
       else if (sub === 'locover' && game && game.over && game.type === 'loc') renderLocOver();
       else if (sub === 'over' && game) renderGameOver();
@@ -889,13 +889,18 @@ function dailyCardHtml() {
    It filters the daily learning, the quiz and the personal crossword; "+ דף" moves the last page on by one */
 function gem(n) { const h = hebNum(n); return h.length === 1 ? h + '׳' : h.slice(0, -1) + '״' + h.slice(-1); }
 function holdLabel() { return SC.d0 === SC.d1 ? 'דף ' + gem(SC.d0) : 'דפים ' + gem(SC.d0) + '–' + gem(SC.d1); }
+/* outside a page range (all the tractate, a chapter, a topic...): a compact row to open "הכנה לדף" for any page (1.9) */
+function prepDaf() { const d = S.settings.prepDaf; return Number.isInteger(d) && d >= 2 && d <= 157 ? d : 2; }
 function holdHtml() {
-  if (SC.by !== 'daf') return '';
+  if (SC.by !== 'daf') {
+    let o = ''; for (let d = 2; d <= 157; d++) o += '<option value="' + d + '"' + (d === prepDaf() ? ' selected' : '') + '>דף ' + gem(d) + '</option>';
+    return '<div class="hold prepq"><span class="holdl">הכנה לדף<small>מה שמופיע לראשונה בדף</small></span><select id="prep-d" aria-label="בחירת דף">' + o + '</select><button class="btn line" id="prep-go">פתיחה</button></div>';
+  }
   return '<div class="hold"><button class="holdl" id="hold-open">אוחז ב' + esc(holdLabel()) + '<small>הכנה לדף ' + esc(gem(SC.d1)) + '</small></button><button class="btn line" id="hold-plus"' + (SC.d1 >= 157 ? ' disabled' : '') + '>+ דף</button></div>';
 }
 /* הכנה לדף: the words and concepts that appear for the first time on the last page of the range, to read before the lesson */
-function openPrep() {
-  const d = SC.d1, ws = D.filter(e => dafNum(e.a) === d).sort((x, y) => x.a - y.a || y.c - x.c), cs = CN.filter(e => dafNum(e.a) === d);
+function openPrep(pick) {
+  const free = Number.isInteger(pick), d = free ? pick : SC.d1, ws = D.filter(e => dafNum(e.a) === d).sort((x, y) => x.a - y.a || y.c - x.c), cs = CN.filter(e => dafNum(e.a) === d);
   const row = e => '<div><b>' + esc(e.w) + '</b> <span>' + esc(e.cn ? e.s : gloss(e)) + '</span>' + (e.rare ? ' <span class="rare">נדיר</span>' : '') + '</div>';
   /* the new words of the page: what is not known yet (never studied, or still on the way), the words first, in the order of the page */
   const fresh = ws.concat(cs).filter(e => studyOk(e) && !isKnown(e));
@@ -906,11 +911,13 @@ function openPrep() {
     (fresh.length ? '<button class="btn wide" id="pr-new">תרגל את המילים החדשות של הדף (' + fresh.length + ')</button>'
       : (ws.length || cs.length) ? '<p class="small muted">כל מה שמופיע לראשונה בדף הזה כבר ידוע לך.</p>' : '') +
     ((ws.length || cs.length) ? '<button class="btn ' + (fresh.length ? 'line' : '') + ' wide" id="pr-go">תרגול כל מילות הדף (' + (ws.length + cs.length) + ')</button>' : '') +
-    '<button class="btn line wide" id="pr-scope">שינוי הטווח</button>');
+    (free ? (d < 157 ? '<button class="btn line wide" id="pr-next">הכנה לדף הבא (' + esc(gem(d + 1)) + ')</button>' : '')
+      : '<button class="btn line wide" id="pr-scope">שינוי הטווח</button>'));
   const pg = $('pr-go'); if (pg) pg.onclick = () => { closeSheet(); startSession('prep', cs.concat(ws).map(e => ({ e, isNew: !S.prog[pid(e)] }))); };
   const pn = $('pr-new'); if (pn) pn.onclick = () => { closeSheet(); track('prep_new', { daf: d, n: fresh.length }); startSession('prep', fresh.map(e => ({ e, isNew: !S.prog[pid(e)] }))); };
   $('pr-close').onclick = closeSheet;
-  $('pr-scope').onclick = () => { closeSheet(); openScope(renderLearn); };
+  const ps = $('pr-scope'); if (ps) ps.onclick = () => { closeSheet(); openScope(renderLearn); };
+  const nx = $('pr-next'); if (nx) nx.onclick = () => { S.settings.prepDaf = d + 1; save(); const sl = view.querySelector('#prep-d'); if (sl) sl.value = String(d + 1); openPrep(d + 1); };
 }
 function renderLearn() {
   const list = scopeItems(), st = stats(list), room = Math.max(0, S.settings.newPerDay - newToday());
@@ -933,7 +940,9 @@ function renderLearn() {
   if ($('h-arch')) $('h-arch').onclick = openArchive;
   const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
   const hp = $('hold-plus'); if (hp) hp.onclick = () => { if (SC.d1 < 157) { SC.d1++; saveSc(); render(false); toast('אוחז עד דף ' + hebNum(SC.d1)); } };
-  const ho = $('hold-open'); if (ho) ho.onclick = openPrep;
+  const ho = $('hold-open'); if (ho) ho.onclick = () => openPrep();
+  const pd = $('prep-d'); if (pd) pd.onchange = () => { S.settings.prepDaf = +pd.value; save(); };
+  const pgo = $('prep-go'); if (pgo) pgo.onclick = () => { const d = pd ? +pd.value : prepDaf(); S.settings.prepDaf = d; save(); track('prep_open', { daf: d, scope: SC.by }); openPrep(d); };
   shieldNotice(); backupNote();
   view.insertAdjacentHTML('beforeend', installHtml()); bindInstall();
   $('go').onclick = () => startSession();
@@ -1589,9 +1598,9 @@ const gameCfg = { scope: 'all', kind: 'words' };
 function renderGames() {
   const bm = S.best.match, bb = S.best.blitz30, bf = S.best.fill;
   gameCfg.scope = 'all'; gameCfg.kind = 'words';
-  const ln = S.best.locN, lx = S.best.locX, lb = [Number.isInteger(ln) ? 'רגיל ' + locNum(ln) : '', Number.isInteger(lx) ? 'אקסטרים ' + locNum(lx) : ''].filter(Boolean);
+  const lb = locBest();
   view.innerHTML = '<h2>משחקים</h2><div class="menu">' +
-    '<button id="g-loc" class="hot"><b>איפה בגמרא? <i class="new">חדש</i></b><span>קטע קצר ממסכת שבת: מאיזה פרק ומאיזה דף הוא? עשרה קטעים, עד 1,000 נקודות</span>' + (lb.length ? '<em>שיא: ' + lb.join('<br>') + '</em>' : '') + '</button>' +
+    '<button id="g-loc" class="hot"><b>איפה בגמרא? <i class="new">חדש</i></b><span>קטע קצר ממסכת שבת: מאיזה פרק ומאיזה דף הוא? עשרה קטעים, עד 1,000 נקודות</span>' + (Number.isInteger(lb) ? '<em>שיא: ' + locNum(lb) + '/1,000</em>' : '') + '</button>' +
     '<button id="g-xw"><b>תשחץ אישי</b><span>לוח חדש מהמילים שתבחר: כל המאגר, מה שלמדת או לפי פרקים</span></button>' +
     '<button id="g-match"><b>התאמת זוגות</b><span>לחבר שש מילים בארמית לפירוש שלהן, כמה שיותר מהר</span>' + (bm ? '<em>שיא: ' + bm + ' שנ\'</em>' : '') + '</button>' +
     '<button id="g-blitz"><b>אתגר 30 שניות</b><span>לזהות כמה שיותר מילים לפני שהזמן נגמר, עם ניקוד ורצף</span>' + (bb ? '<em>שיא: ' + bb + '</em>' : '') + '</button>' +
@@ -1722,7 +1731,9 @@ function renderFill() {
    Ten passages a round, up to 10 points each. Stage 1 picks the chapter out of all 24: a wrong chapter ends the question
    (2 points for the next or the previous chapter, 0 for any other). Stage 2 picks the page out of the pages of that
    chapter: 10 for the exact page, 8, 7, 5 for one, two or three pages off, 4 for anything further in the chapter.
-   The passages (www/passages.js, two modes: normal and extreme) load only when the game opens */
+   The passages (www/passages.js: mishnayot, well known baraitot and anchors of the page; one mode since 1.9, the extreme
+   mode was dropped) load only when the game opens. The one personal best is S.best.locN, the key of the old normal mode,
+   so the best kept in aramit-shabbat-v1 (and in the cloud backup) carries over; an old locX is left alone and unused */
 const LOC_N = 10;
 /* chapters that open at the top of an amud aleph, so the page before is the last page of the chapter before them */
 const PK_TOP = new Set([5, 18]);
@@ -1751,26 +1762,27 @@ function loadPassages() {
 function openLoc() {
   const v = view;
   if (!window.PASSAGES) { const b = $('g-loc'); if (b) b.classList.add('busy'); }
-  loadPassages().then(() => nav('games', 'locmode')).catch(() => { toast('לא הצלחתי לטעון את הקטעים. בדוק את החיבור ונסה שוב'); const b = v && v.querySelector('#g-loc'); if (b) b.classList.remove('busy'); });
+  loadPassages().then(() => nav('games', 'locintro')).catch(() => { toast('לא הצלחתי לטעון את הקטעים. בדוק את החיבור ונסה שוב'); const b = v && v.querySelector('#g-loc'); if (b) b.classList.remove('busy'); });
 }
-function locBest(m) { return S.best[m === 'extreme' ? 'locX' : 'locN']; }
-function renderLocMode() {
+function locBest() { return S.best.locN; }
+/* the scoring as a short table: a number never sits beside a full stop, so nothing wraps the wrong way round in RTL */
+const LOC_RULES = [['דף מדויק', 100], ['דף אחד ממנו', 85], ['שני דפים ממנו', 70], ['שלושה דפים ממנו', 55], ['דף רחוק יותר בפרק', 40], ['פרק סמוך', 20]];
+function renderLocIntro() {
   const P = window.PASSAGES; if (!P) { renderGames(); return; }
-  const bn = locBest('normal'), bx = locBest('extreme');
+  const bn = locBest();
   view.innerHTML = '<div class="row between"><h2>איפה בגמרא?</h2><button class="link" id="lm-back">חזרה למשחקים</button></div>' +
-    '<p class="muted small" style="margin:0">קטע קצר ממסכת שבת. מזהים קודם את הפרק, ואחר כך את הדף. עשרה קטעים, עד 100 נקודות לכל קטע.</p>' +
-    '<div class="menu">' +
-    '<button id="lm-n"><b>רגיל</b><span>משניות, ברייתות מוכרות ופתיחות של סוגיות</span>' + (Number.isInteger(bn) ? '<em>שיא: ' + locNum(bn) + '/1,000</em>' : '') + '</button>' +
-    '<button id="lm-x"><b>אקסטרים</b><span>קטעים מתוך המשא ומתן של הגמרא, בלי משניות ובלי פתיחות</span>' + (Number.isInteger(bx) ? '<em>שיא: ' + locNum(bx) + '/1,000</em>' : '') + '</button></div>' +
-    '<p class="small muted">ניקוד: בפרק הנכון, דף מדויק 100, סטייה של דף 85, של שני דפים 70, של שלושה 55, ורחוק יותר 40. פרק סמוך 20.</p>';
+    '<p class="muted small" style="margin:0">קטע קצר ממסכת שבת: משנה, ברייתא מוכרת או מימרא ידועה מהדף. מזהים קודם את הפרק, ואחר כך את הדף.</p>' +
+    '<section class="locintro"><div class="lihead"><b>עשרה קטעים</b><span>עד 100 נקודות לכל קטע</span></div>' +
+    '<ul class="locrules">' + LOC_RULES.map(r => '<li><span>' + r[0] + '</span><b>' + r[1] + '</b></li>').join('') + '<li class="zero"><span>פרק אחר</span><b>0</b></li></ul>' +
+    (Number.isInteger(bn) ? '<p class="locbest">השיא שלך: <b>' + locNum(bn) + '/1,000</b></p>' : '') +
+    '<button class="btn wide" id="lm-go">התחלה</button></section>';
   $('lm-back').onclick = goBack;
-  $('lm-n').onclick = () => startLoc('normal');
-  $('lm-x').onclick = () => startLoc('extreme');
+  $('lm-go').onclick = startLoc;
 }
-/* ten passages from as many different chapters as possible, leaving out the passages of the last rounds of the mode */
-function pickLoc(mode) {
-  const all = window.PASSAGES.map((p, i) => Object.assign({ i }, p)).filter(p => p.m === mode);
-  const rk = 'loc' + (mode === 'extreme' ? 'X' : 'N'), rec = (S.settings.locRecent && S.settings.locRecent[rk]) || [];
+/* ten passages from as many different chapters as possible, leaving out the passages of the last rounds */
+function pickLoc() {
+  const all = window.PASSAGES.map((p, i) => Object.assign({ i }, p));
+  const rk = 'loc', rec = (S.settings.locRecent && S.settings.locRecent[rk]) || [];
   const keep = Math.max(0, Math.min(rec.length, all.length - 3 * LOC_N));
   const recent = new Set(rec.slice(-keep));
   let src = shuffle(all.filter(p => !recent.has(p.i)));
@@ -1783,9 +1795,9 @@ function pickLoc(mode) {
   save();
   return shuffle(out);
 }
-function startLoc(mode) {
+function startLoc() {
   if (!window.PASSAGES) { openLoc(); return; }
-  game = { type: 'loc', mode, qs: pickLoc(mode), pos: 0, pts: [], stage: 'pk', pk: null, daf: null };
+  game = { type: 'loc', qs: pickLoc(), pos: 0, pts: [], stage: 'pk', pk: null, daf: null };
   nav('games', 'loc', R.sub === 'locover' || R.sub === 'loc');
 }
 function locWhere(p) { return 'פרק ' + ordPk(p.pk - 1) + ', ' + PEREKS[p.pk - 1][0] + ', דף ' + p.d; }
@@ -1793,7 +1805,7 @@ function renderLoc() {
   const g = game, q = g.qs[g.pos];
   if (!q) { finishLoc(); return; }
   const total = g.pts.reduce((a, b) => a + b, 0), done = g.stage === 'done';
-  let h = '<div class="row between"><span class="small muted">' + (g.mode === 'extreme' ? 'אקסטרים' : 'רגיל') + ' · קטע ' + (g.pos + 1) + ' מתוך ' + LOC_N + '</span>' +
+  let h = '<div class="row between"><span class="small muted">קטע ' + (g.pos + 1) + ' מתוך ' + LOC_N + '</span>' +
     '<span class="locscore"><b>' + locNum(total) + '</b>/1,000</span></div>' +
     '<ol class="locbar">' + g.qs.map((x, i) => '<li class="' + (i < g.pts.length ? 'c-' + locColor(g.pts[i]) : i === g.pos ? 'cur' : '') + '">' + (i + 1) + '</li>').join('') + '</ol>' +
     '<section class="loccard"><p class="psg">' + esc(q.t) + '</p></section>';
@@ -1836,29 +1848,29 @@ function renderLoc() {
 function locScroll(sel) { const el = view.querySelector(sel); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' }); }
 function finishLoc() {
   const g = game; if (g.over) { nav('games', 'locover', true); return; }
-  const score = g.pts.reduce((a, b) => a + b, 0), bk = g.mode === 'extreme' ? 'locX' : 'locN';
-  const best = !Number.isInteger(S.best[bk]) || score > S.best[bk];
-  if (best) { S.best[bk] = score; save(); }
+  const score = g.pts.reduce((a, b) => a + b, 0), prev = locBest();
+  const best = !Number.isInteger(prev) || score > prev;
+  if (best) { S.best.locN = score; save(); }
   g.over = { score, best };
-  track('locator_complete', { score, mode: g.mode, scope: 'all' });
+  track('locator_complete', { score, new_best: best ? 1 : 0 });
   nav('games', 'locover', true);
 }
 function locShareText() {
   const g = game, o = g.over;
-  return shareLines(['פשיטא: איפה בגמרא? ' + (g.mode === 'extreme' ? '(אקסטרים)' : '(רגיל)'),
+  return shareLines(['פשיטא: איפה בגמרא?',
     g.pts.map(p => ({ g: '🟩', y: '🟨', r: '🟥' })[locColor(p)]).join(''), '🎯 ' + locNum(o.score) + '/1,000']);
 }
 function renderLocOver() {
-  const g = game, o = g.over, bk = g.mode === 'extreme' ? 'locX' : 'locN';
-  view.innerHTML = '<div class="result"><span class="tag">איפה בגמרא? · ' + (g.mode === 'extreme' ? 'אקסטרים' : 'רגיל') + '</span>' +
+  const g = game, o = g.over;
+  view.innerHTML = '<div class="result"><span class="tag">איפה בגמרא?</span>' +
     '<div class="big">' + locNum(o.score) + '<small>/1,000</small></div>' +
     '<div class="progress locmeter"><i style="width:' + (o.score / LOC_MAX * 100) + '%"></i></div>' +
     '<ol class="locbar">' + g.pts.map((p, i) => '<li class="c-' + locColor(p) + '">' + (i + 1) + '</li>').join('') + '</ol>' +
-    (o.best ? '<p style="color:var(--gold);font-weight:700">שיא אישי חדש</p>' : '<p class="muted small">השיא שלך במצב הזה: ' + locNum(S.best[bk]) + '/1,000</p>') +
+    (o.best ? '<p style="color:var(--gold);font-weight:700">שיא אישי חדש</p>' : '<p class="muted small">השיא שלך: ' + locNum(locBest()) + '/1,000</p>') +
     '<button class="btn wide" id="again">משחק נוסף</button><button class="btn line wide" id="lo-share">שיתוף תוצאה</button>' +
     '<ul class="loclist">' + g.qs.map((q, i) => '<li><span class="c-' + locColor(g.pts[i]) + '">' + g.pts[i] + '</span><div><b>' + esc(locWhere(q)) + '</b><small>' + esc(q.t) + '</small></div></li>').join('') + '</ul>' +
     '<button class="link" id="back">חזרה למשחקים</button></div>';
-  $('again').onclick = () => startLoc(g.mode);
+  $('again').onclick = () => startLoc();
   $('back').onclick = goBack;
   $('lo-share').onclick = () => {
     const t = locShareText();
@@ -3389,7 +3401,7 @@ function bindSync() {
   on('s-sync-now', () => { SYNC.syncNow().then(ok => { const z = SYNC.status(); toast(ok ? 'הנתונים סונכרנו' : z.offline ? 'אין חיבור לרשת. הסנכרון ימשיך כשהרשת תחזור' : z.error || 'הסנכרון לא הצליח, ננסה שוב בהמשך'); }); });
   on('s-sync-out', () => { SYNC.signOut().then(() => { track('sync_signout'); toast('התנתקת. ההתקדמות נשארת במכשיר'); }); });
 }
-function syncWhere() { return SYNC && SYNC.status().user ? 'ההתקדמות נשמרת במכשיר, ועותק שלה נשמר בגיבוי בענן בחשבון שלך.' : 'ההתקדמות נשמרת במכשיר בלבד.'; }
+function syncWhere() { return SYNC && SYNC.status().user ? 'ההתקדמות נשמרת במכשיר, ועותק שלה נשמר בגיבוי בענן בחשבון הגוגל שלך.' : 'ההתקדמות נשמרת במכשיר, ואפשר לגבות אותה בענן בחשבון גוגל.'; }
 function syncRedraw() {
   const el = document.querySelector('#sheet-host #s-sync'); if (el) { el.innerHTML = syncHtml(); bindSync(); }
   const wh = document.querySelector('#sheet-host #s-where'); if (wh) wh.textContent = syncWhere();
@@ -3428,7 +3440,7 @@ function openSettings(confirmReset) {
     '<p>הפירושים קצרים ונועדו לעזור בקריאה שוטפת. הם אינם תחליף לרש"י ולמפרשים, ובמילה שיש לה כמה מובנים ייתכן שהפירוש לא יתאים לכל מקום. אפשר לתקן כל פירוש במילון, והתיקון נשמר במכשיר שלך.</p>' +
     '<p>הספירה נעשתה על נוסח הגמרא שבספריא (מהדורת ויליאם דוידסון, קורן). הגופנים: פרנק ריהל ליברה ואסיסטנט, ברישיון פתוח (OFL).</p>' +
     '<p>בוורדל אפשר לנחש גם מילים עבריות רגילות. רשימת המילים לקוחה ממאגר שכיחות המילים של הרמיט דייב, שנבנה מכתוביות סרטים (OpenSubtitles), ברישיון CC BY-SA 4.0.</p>' +
-    '<p>האפליקציה פועלת בלי רשת ואינה אוספת שום מידע. <span id="s-where">' + syncWhere() + '</span> גרסה ' + VERSION + '</p>' +
+    '<p>האפליקציה פועלת גם בלי רשת. <span id="s-where">' + syncWhere() + '</span> האתר אוסף נתוני שימוש אנונימיים כדי לשפר את החוויה. גרסה ' + VERSION + '</p>' +
     '<p class="credit">נוסח הגמרא על פי מהדורת ויליאם דוידסון בספריא (CC-BY-NC)</p></div>');
   $('s-close').onclick = closeSheet;
   bindSeg('s-npd', v => { S.settings.newPerDay = +v; save(); openSettings(); render(); });

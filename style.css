@@ -632,3 +632,16 @@ body.kbmode .tabs button[aria-selected="true"] i{background:transparent}
 .detail .ctx{margin:6px 0 10px}
 .credit{font-size:.75rem;opacity:.85;border-top:1px dashed var(--line);padding-top:8px;margin-top:4px}
 .sync-mail{text-align:right;margin-top:-4px;word-break:break-all}
+/* "איפה בגמרא?" opening screen (1.9): one mode, the scoring as a table so no number wraps beside a full stop */
+.locintro{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px 16px;margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.locintro .lihead{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.locintro .lihead span{font-size:.85rem;color:var(--muted)}
+.locrules{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.locrules li{display:flex;justify-content:space-between;align-items:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:.88rem}
+.locrules li b{font-variant-numeric:tabular-nums;color:var(--gold);unicode-bidi:isolate}
+.locrules li.zero b{color:var(--muted)}
+.locintro .locbest{margin:0;font-size:.9rem;color:var(--muted)}
+.locintro .locbest b{color:var(--ink)}
+/* "הכנה לדף" outside a page range (1.9): label, page picker and button in one row */
+.hold.prepq .holdl{border-style:dashed}
+.hold.prepq select{flex:none;width:auto;min-width:96px;min-height:40px;padding:6px 10px;font:inherit;font-weight:600;color:var(--ink)}
