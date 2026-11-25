@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.9.0';
+const VERSION = '1.10.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -1795,9 +1795,54 @@ function pickLoc() {
   save();
   return shuffle(out);
 }
-function startLoc() {
+/* a friend challenge (from 1.10): a link ?game=locator&seed=...&s=...&r=... gives a friend the same ten passages. The seed holds
+   the ten passages themselves (two base-36 letters each, their place in passages.js, in the order played), so the round of
+   the one who sends it is drawn as always (without the passages of the last rounds) and the friend's round is exactly the
+   same; s is the score of the one who sent it and r a letter for each passage (LOC_CODE), to compare passage by passage */
+const LOC_CODE = { 100: 'a', 85: 'b', 70: 'c', 55: 'd', 40: 'e', 20: 'f', 0: 'g' };
+function locSeedOf(qs) { return qs.map(q => q.i.toString(36).padStart(2, '0')).join(''); }
+function locFromSeed(seed) {
+  const P = window.PASSAGES; if (!P || !/^[0-9a-z]+$/.test(seed || '') || seed.length !== 2 * LOC_N) return null;
+  const idx = seed.match(/../g).map(x => parseInt(x, 36));
+  if (idx.some(i => !(i >= 0 && i < P.length)) || new Set(idx).size !== LOC_N) return null;
+  return idx.map(i => Object.assign({ i }, P[i]));
+}
+function locRival(ch) {
+  const back = Object.keys(LOC_CODE).reduce((o, k) => (o[LOC_CODE[k]] = +k, o), {});
+  const r = /^[a-g]+$/.test(ch.r || '') && ch.r.length === LOC_N ? ch.r.split('').map(c => back[c]) : null;
+  const s = r ? r.reduce((a, b) => a + b, 0) : Number.isInteger(ch.s) && ch.s >= 0 && ch.s <= LOC_MAX ? ch.s : null;
+  return s === null ? null : { s, r };
+}
+function locLink(g) {
+  return APP_URL + '?game=locator&seed=' + locSeedOf(g.qs) + '&s=' + g.over.score + '&r=' + g.pts.map(p => LOC_CODE[p] || 'g').join('');
+}
+/* the challenge in the address, read once at start and taken out of the address so a reload does not start it again */
+const LOC_CHAL = (() => {
+  try {
+    const q = new URLSearchParams(location.search); if (q.get('game') !== 'locator') return null;
+    const ch = { seed: (q.get('seed') || '').toLowerCase(), s: parseInt(q.get('s'), 10), r: (q.get('r') || '').toLowerCase() };
+    ['game', 'seed', 's', 'r'].forEach(k => q.delete(k));
+    const rest = q.toString().replace(/=(?=&|$)/g, '');
+    history.replaceState(history.state, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    return ch;
+  } catch (e) { return null; }
+})();
+function openLocChallenge(ch) {
+  loadPassages().then(() => {
+    const qs = locFromSeed(ch.seed);
+    if (!qs) { toast('הקישור לאתגר אינו תקין. אפשר לשחק משחק רגיל'); nav('games', 'locintro'); return; }
+    track('locator_challenge_open', { rival: locRival(ch) ? locRival(ch).s : -1 });
+    startLoc({ qs, rival: locRival(ch) });
+  }).catch(() => toast('לא הצלחתי לטעון את הקטעים. בדוק את החיבור ונסה שוב'));
+}
+function startLoc(ch) {
   if (!window.PASSAGES) { openLoc(); return; }
-  game = { type: 'loc', qs: pickLoc(), pos: 0, pts: [], stage: 'pk', pk: null, daf: null };
+  if (ch && ch.qs) {   /* the passages of a challenge count as played, as those of any round */
+    const rec = (S.settings.locRecent && S.settings.locRecent.loc) || [];
+    S.settings.locRecent = S.settings.locRecent || {};
+    S.settings.locRecent.loc = rec.concat(ch.qs.map(p => p.i)).slice(-Math.max(LOC_N, window.PASSAGES.length - LOC_N)); save();
+  }
+  game = { type: 'loc', qs: ch && ch.qs ? ch.qs : pickLoc(), pos: 0, pts: [], stage: 'pk', pk: null, daf: null, rival: ch && ch.rival || null };
   nav('games', 'loc', R.sub === 'locover' || R.sub === 'loc');
 }
 function locWhere(p) { return 'פרק ' + ordPk(p.pk - 1) + ', ' + PEREKS[p.pk - 1][0] + ', דף ' + p.d; }
@@ -1808,6 +1853,7 @@ function renderLoc() {
   let h = '<div class="row between"><span class="small muted">קטע ' + (g.pos + 1) + ' מתוך ' + LOC_N + '</span>' +
     '<span class="locscore"><b>' + locNum(total) + '</b>/1,000</span></div>' +
     '<ol class="locbar">' + g.qs.map((x, i) => '<li class="' + (i < g.pts.length ? 'c-' + locColor(g.pts[i]) : i === g.pos ? 'cur' : '') + '">' + (i + 1) + '</li>').join('') + '</ol>' +
+    (g.rival ? '<p class="locchal">אתגר מחבר: הוא השיג <b>' + locNum(g.rival.s) + '/1,000</b> על אותם קטעים</p>' : '') +
     '<section class="loccard"><p class="psg">' + esc(q.t) + '</p></section>';
   const k = q.pk - 1;
   if (g.stage === 'pk' || (done && g.pk !== k)) {
@@ -1845,7 +1891,18 @@ function renderLoc() {
   }; });
   const nx = $('lc-next'); if (nx) nx.onclick = () => { g.pos++; g.stage = 'pk'; g.pk = null; g.daf = null; renderLoc(); view.scrollTop = 0; };
 }
-function locScroll(sel) { const el = view.querySelector(sel); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' }); }
+/* brings a part of the round into sight inside the panel: the heading before it and all of it when they fit (as much of the
+   passage above stays in sight as can), otherwise from its heading down. The panel is scrolled by itself, never the rail */
+function locScroll(sel) {
+  const v = view, el = v.querySelector(sel); if (!el) return;
+  const top0 = (el.previousElementSibling && el.previousElementSibling.classList.contains('lochd') ? el.previousElementSibling : el);
+  const vr = v.getBoundingClientRect(), y = n => n - vr.top + v.scrollTop;
+  const nx = el.nextElementSibling && el.nextElementSibling.id === 'lc-next' ? el.nextElementSibling : el;
+  const top = y(top0.getBoundingClientRect().top) - 8, bottom = y(nx.getBoundingClientRect().bottom) + 12;
+  const want = bottom - top <= v.clientHeight ? Math.min(top, Math.max(v.scrollTop, bottom - v.clientHeight)) : top;
+  if (Math.abs(want - v.scrollTop) < 2) return;
+  if (v.scrollTo) v.scrollTo({ top: want, behavior: calm ? 'auto' : 'smooth' }); else v.scrollTop = want;
+}
 function finishLoc() {
   const g = game; if (g.over) { nav('games', 'locover', true); return; }
   const score = g.pts.reduce((a, b) => a + b, 0), prev = locBest();
@@ -1861,17 +1918,30 @@ function locShareText() {
     g.pts.map(p => ({ g: '🟩', y: '🟨', r: '🟥' })[locColor(p)]).join(''), '🎯 ' + locNum(o.score) + '/1,000']);
 }
 function renderLocOver() {
-  const g = game, o = g.over;
-  view.innerHTML = '<div class="result"><span class="tag">איפה בגמרא?</span>' +
+  const g = game, o = g.over, rv = g.rival;
+  let vs = '';
+  if (rv) {
+    const d = o.score - rv.s;
+    vs = '<div class="locvs"><div><small>החבר</small><b>' + locNum(rv.s) + '</b></div><div class="me"><small>אתה</small><b>' + locNum(o.score) + '</b></div></div>' +
+      '<p class="locverdict ' + (d > 0 ? 'win' : d < 0 ? 'lose' : 'tie') + '">' + (d > 0 ? 'ניצחת את החבר ב-' + locNum(d) + ' נקודות' : d < 0 ? 'החבר ניצח ב-' + locNum(-d) + ' נקודות' : 'תיקו') + '</p>';
+  }
+  view.innerHTML = '<div class="result"><span class="tag">' + (rv ? 'איפה בגמרא? אתגר מחבר' : 'איפה בגמרא?') + '</span>' +
     '<div class="big">' + locNum(o.score) + '<small>/1,000</small></div>' +
     '<div class="progress locmeter"><i style="width:' + (o.score / LOC_MAX * 100) + '%"></i></div>' +
     '<ol class="locbar">' + g.pts.map((p, i) => '<li class="c-' + locColor(p) + '">' + (i + 1) + '</li>').join('') + '</ol>' +
-    (o.best ? '<p style="color:var(--gold);font-weight:700">שיא אישי חדש</p>' : '<p class="muted small">השיא שלך: ' + locNum(locBest()) + '/1,000</p>') +
-    '<button class="btn wide" id="again">משחק נוסף</button><button class="btn line wide" id="lo-share">שיתוף תוצאה</button>' +
-    '<ul class="loclist">' + g.qs.map((q, i) => '<li><span class="c-' + locColor(g.pts[i]) + '">' + g.pts[i] + '</span><div><b>' + esc(locWhere(q)) + '</b><small>' + esc(q.t) + '</small></div></li>').join('') + '</ul>' +
+    vs + (o.best ? '<p style="color:var(--gold);font-weight:700">שיא אישי חדש</p>' : '<p class="muted small">השיא שלך: ' + locNum(locBest()) + '/1,000</p>') +
+    '<button class="btn wide" id="again">משחק נוסף</button><button class="btn line wide" id="lo-chal">' + (rv ? 'אתגר חבר נוסף על אותן 10 שאלות' : 'אתגר חבר על אותן 10 שאלות') + '</button>' +
+    '<button class="btn line wide" id="lo-share">שיתוף תוצאה</button>' +
+    '<ul class="loclist">' + g.qs.map((q, i) => '<li><span class="c-' + locColor(g.pts[i]) + '">' + g.pts[i] + '</span><div><b>' + esc(locWhere(q)) + '</b><small>' + esc(q.t) + '</small>' +
+      (rv && rv.r ? '<em class="locrv">החבר: ' + rv.r[i] + '</em>' : '') + '</div></li>').join('') + '</ul>' +
     '<button class="link" id="back">חזרה למשחקים</button></div>';
   $('again').onclick = () => startLoc();
   $('back').onclick = goBack;
+  $('lo-chal').onclick = () => {
+    const link = locLink(g), t = '\u200fפשיטא: איפה בגמרא?\n\u200fהשגתי ' + locNum(o.score) + ' מתוך 1,000. תצליח יותר על אותם 10 קטעים?\n' + link;
+    track('locator_challenge_share', { score: o.score });
+    try { const w = window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank'); if (!w) copyText(t); } catch (e) { copyText(t); }
+  };
   $('lo-share').onclick = () => {
     const t = locShareText();
     try { const w = window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank'); if (!w) copyText(t); } catch (e) { copyText(t); }
@@ -2227,7 +2297,8 @@ function renderXWSetup() {
     PEREKS.map((pk, k) => { const c = XW_ALL.filter(e => xwSrcOk(e, k)).length; return '<button data-v="' + k + '" aria-pressed="' + (xwCfg.pereks.indexOf(k) >= 0) + '"' + (c ? '' : ' disabled') + '><span>' + ordPk(k) + '. ' + esc(pk[0]) + '</span><b>' + c + '</b></button>'; }).join('') + '</div>';
   view.innerHTML = '<div class="row between"><h2>תשחץ אישי</h2><button class="link" id="xw-back">חזרה למשחקים</button></div>' +
     xwTopHtml() +
-    '<p class="small muted">בחר מאגר מילים.' + (SC.by === 'daf' ? ' מכל המאגר נלקחות רק מילים מהדפים שאתה אוחז בהם (' + esc(holdLabel()) + ').' : '') + '</p>' +
+    '<p class="small muted" id="xw-note">בחר מאגר מילים.' + (SC.by !== 'daf' ? '' : xwCfg.src === 'all' ? ' מכל המאגר נלקחות רק מילים מהדפים שאתה אוחז בהם (' + esc(holdLabel()) + ').' :
+      xwCfg.src === 'pk' ? ' בבחירת פרקים נלקחות כל המילים של הפרקים שבחרת, גם מעבר לדפים שאתה אוחז בהם.' : '') + '</p>' +
     '<div class="field"><span class="label">מאגר מילים</span><div class="seg" id="xw-src">' +
     [['all', 'כל המילים'], ['learned', 'שנלמדו'], ['pk', 'לפי פרקים']].map(o => '<button data-v="' + o[0] + '" aria-pressed="' + (xwCfg.src === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>' +
     sub +
@@ -3589,7 +3660,10 @@ $('btn-theme').onclick = () => {
 try { history.replaceState(R, ''); } catch (e) { /* ignore */ }
 render();
 TABS.forEach(t => { if (t !== R.tab) paint(t); });
-if (!S.onboarded) { if (D.concat(CN).some(isKnown)) { S.onboarded = true; save(); } else openWelcome(0); }
+if (!S.onboarded && D.concat(CN).some(isKnown)) { S.onboarded = true; save(); }
+/* a friend's challenge opens the game right away; a first visit sees the welcome on the next visit */
+if (LOC_CHAL) openLocChallenge(LOC_CHAL);
+else if (!S.onboarded) openWelcome(0);
 else if (/"open":true/.test(localStorage.getItem(XKEY) || '')) need(XWN).then(() => { const sv = xwLoad(); if (sv && sv.open && !R.sub && !sheetOpen) { xg = sv; nav('xw', 'board'); } });
 /* the files of the main screens, right after the first one is drawn; the screen shown is drawn again with them */
 setTimeout(() => need(['occ'].concat(XWN)).then(() => { if (!R.sub && !sheetOpen && !(drawn[R.tab] && drawn[R.tab].ver === ver)) render(false); }, () => { /* offline before the first visit ended */ }), 0);
@@ -3601,7 +3675,7 @@ if (SYNC) {
 try { if (sessionStorage.getItem('pshita-restored')) { sessionStorage.removeItem('pshita-restored'); toast('ההתקדמות שוחזרה מהעותק השמור במכשיר'); } } catch (e) { /* ignore */ }
 setTimeout(iosHint, 2500);
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()], pkDafs: k => pkDafs(k), locShare: () => locShareText(), dafPts: d => dafPts(d), xwTwo: () => XW_TWO.map(e => e.w),
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()], pkDafs: k => pkDafs(k), locShare: () => locShareText(), locLink: () => locLink(game), locSeed: () => locSeedOf(game.qs), dafPts: d => dafPts(d), xwTwo: () => XW_TWO.map(e => e.w),
   today: () => today(), applyBackup: o => applyBackup(o), backupText: () => backupText(), setProg: (w, p) => { S.prog[pid(BYID.get(w))] = p; save(); }, pickMode: w => pickMode({ e: BYID.get(w), isNew: false }), markKnown: w => markKnown(BYID.get(w)), studyOk: w => studyOk(BYID.get(w)), exHtml: i => exHtml(D[i]), studyMode: () => studyMode(), groupQueue: l => groupQueue(l.map(x => ({ e: BYID.get(x.w), isNew: !!x.n }))), planMode: (w, isNew) => planMode({ e: BYID.get(w), isNew: !!isNew }), nav: (t, s) => nav(t, s) };
 
 /* hardware back button inside the Android app */

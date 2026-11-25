@@ -167,7 +167,7 @@ textarea{min-height:84px;resize:vertical}
 .sheet{position:fixed;inset:0;background:rgba(8,12,22,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center}
 .sheet>div{background:var(--bg);width:100%;max-width:600px;max-height:92%;overflow:auto;border-radius:20px 20px 0 0;padding:20px 16px calc(48px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
 /* the settings title and its close button stay on top while the sheet scrolls */
-.sheet .shead{position:sticky;top:-20px;z-index:2;background:var(--bg);margin:-20px -16px 0;padding:20px 16px 10px}
+.sheet .shead{position:sticky;top:-20px;z-index:10;background:var(--bg);background-image:none;opacity:1;isolation:isolate;transform:translateZ(0);margin:-20px -16px 0;padding:20px 16px 10px;box-shadow:0 -20px 0 var(--bg),0 1px 0 var(--line)}
 .sheet.full{align-items:stretch}
 .sheet.full>div{max-height:none;border-radius:0;padding-top:calc(28px + env(safe-area-inset-top,0px));justify-content:center}
 .steps{display:flex;gap:6px;justify-content:center}
@@ -645,3 +645,16 @@ body.kbmode .tabs button[aria-selected="true"] i{background:transparent}
 /* "הכנה לדף" outside a page range (1.9): label, page picker and button in one row */
 .hold.prepq .holdl{border-style:dashed}
 .hold.prepq select{flex:none;width:auto;min-width:96px;min-height:40px;padding:6px 10px;font:inherit;font-weight:600;color:var(--ink)}
+/* a friend's challenge in "איפה בגמרא?" (1.10) */
+.locchal{margin:0;font-size:.88rem;color:var(--muted);text-align:center}
+.locchal b{color:var(--ink);font-variant-numeric:tabular-nums}
+.locvs{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%;max-width:320px}
+.locvs div{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:8px;display:flex;flex-direction:column;align-items:center}
+.locvs div.me{border-color:var(--gold)}
+.locvs small{color:var(--muted);font-size:.82rem}
+.locvs b{font-family:var(--f-word);font-size:1.6rem;font-weight:900;font-variant-numeric:tabular-nums;color:var(--ink)}
+.locverdict{margin:0;font-weight:800}
+.locverdict.win{color:var(--good)}
+.locverdict.lose{color:var(--bad)}
+.locverdict.tie{color:var(--gold)}
+.loclist em.locrv{display:block;font-style:normal;font-size:.8rem;color:var(--muted)}
