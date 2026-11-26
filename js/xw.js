@@ -241,13 +241,19 @@ function xwBuild(src, done, day) {
 
 /* the board in progress is kept on the device, so closing the app and opening it again carries on from the same point */
 const XKEY = 'aramit-shabbat-xw';
+/* while typing, the board is saved 400 ms after the last key (xwSaveSoon), not on every key; xwSave writes at once and is
+   called on leaving the board, on a tab change, when the app goes to the background or the page is closed, and by the clock
+   every five seconds, so nothing typed is lost (1.11.1) */
+let xwSaveT = null;
+function xwSaveSoon() { clearTimeout(xwSaveT); xwSaveT = setTimeout(xwSave, 400); }
 function xwSave() {
+  clearTimeout(xwSaveT); xwSaveT = null;
   const g = ST.xg; if (!g || g.type !== 'xw' || g.arch) return;
   const o = { v: 2, R: g.b.R, C: g.b.C, day: g.day || '', ed: g.b.ed || 0, theme: g.b.theme || '', anchor: !!g.b.anchor, words: g.b.words.map(w => [xwSrc(w.e), w.e.i, w.t, w.clue, w.e.w]), typed: g.typed, hint: [...g.hint], bad: [...g.bad],
     wrongW: [...g.wrongW], hintW: [...g.hintW], act: g.act, cur: g.cur, secs: g.secs || 0, checks: g.checks || 0, open: !!g.open, done: !!g.done };
   try { localStorage.setItem(XKEY, JSON.stringify(o)); } catch (e) { /* storage full or blocked */ }
 }
-function xwForget() { try { localStorage.removeItem(XKEY); } catch (e) { /* ignore */ } }
+function xwForget() { clearTimeout(xwSaveT); xwSaveT = null; try { localStorage.removeItem(XKEY); } catch (e) { /* ignore */ } }
 function xwLoad() {
   try {
     const o = JSON.parse(localStorage.getItem(XKEY) || 'null');
@@ -494,11 +500,15 @@ function xwShorter(t) {
 function xwFitClues() {
   const g = ST.xg, grid = $('xw-grid'); if (!grid) return;
   const key = grid.offsetWidth + 'x' + grid.offsetHeight; if (g._fsAt !== key) { g._fs = {}; g._fsAt = key; }
-  grid.querySelectorAll('.xq').forEach(q => {
+  grid.querySelectorAll('.xq').forEach(q => xwFitOne(g, q));
+}
+/* one definition in its block: from the sizes kept for the board, or measured (also when a word is solved while typing) */
+function xwFitOne(g, q) {
+  {
     /* a solved definition keeps room for its ✓, so its size is worked out again once it is solved */
     const em = q.firstChild, wi = q.dataset.wi + (q.classList.contains('done') ? 'd' : ''), two = q.parentNode.classList.contains('two');
     const kept = g._fs[wi];
-    if (kept) { em.textContent = kept.t; em.style.fontSize = kept.fs + 'px'; if (kept.clip) em.classList.add('clip'); return; }
+    if (kept) { if (em.textContent !== kept.t) em.textContent = kept.t; em.style.fontSize = kept.fs + 'px'; if (kept.clip) em.classList.add('clip'); return; }
     const cs = getComputedStyle(q), H = q.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     const fits = () => em.getBoundingClientRect().height <= H + 0.5 && em.scrollWidth <= em.clientWidth + 0.5;
     const forms = xwShorter(em.textContent);
@@ -517,14 +527,15 @@ function xwFitClues() {
     if (!got) { got = { t: forms[forms.length - 1], fs: 6, clip: true }; em.textContent = got.t; em.style.fontSize = '6px'; em.classList.add('clip'); }
     em.style.fontWeight = '';
     g._fs[wi] = got;
-  });
+  }
 }
 /* the live bar over the board: the definition of the selected word with its length (or the lengths of a phrase),
    and beside it the word as typed so far, one element for each letter so the order never flips, with a gap between the
    words of a phrase. A letter marked wrong by a check is red here too, and a tap on a letter moves the cursor to its cell */
-function xwBarHtml() {
+function xwBarHtml() { const p = xwBarParts(); return p.done ? p.head : p.head + '<div class="xlive" dir="rtl">' + p.live + '</div>' + p.mark; }
+function xwBarParts() {
   const g = ST.xg, w = g.b.words[g.act], e = w.e;
-  if (g.done) return '<p class="xdef xsolved"><b>' + (g.day && g.b.anchor ? 'פתרת את התשחץ היומי #' + g.b.ed : 'פתרת את הלוח') + ' ✓</b> <span>' + mmss(g.secs || 0) + '</span></p><button class="btn" id="xw-sum">לסיכום</button>';
+  if (g.done) return { done: true, head: '<p class="xdef xsolved"><b>' + (g.day && g.b.anchor ? 'פתרת את התשחץ היומי #' + g.b.ed : 'פתרת את הלוח') + ' ✓</b> <span>' + mmss(g.secs || 0) + '</span></p><button class="btn" id="xw-sum">לסיכום</button>' };
   const parts = e.w.trim().split(/\s+/).map(x => xwLetters(x).length).filter(n => n > 0);
   const def = xwOv(e) || (e.cn || e.xe ? e.s : gloss(e)), len = parts.length > 1 ? parts.join(', ') : w.cells.length + ' אותיות';
   let live = '', at = 0, gaps = new Set(); parts.slice(0, -1).forEach(n => { at += n; gaps.add(at); });
@@ -536,7 +547,7 @@ function xwBarHtml() {
   /* a word solved shows a green ✓ beside its letters; a word with a letter marked wrong by a check shows a red ✗ */
   const full = w.cells.every(k => g.typed[k]);
   const mark = xwSolved(w) ? '<b class="xmark ok" aria-label="המילה נכונה">✓</b>' : full || w.cells.some(k => g.bad.has(k)) ? '<b class="xmark no" aria-label="יש במילה טעות">✗</b>' : '';
-  return '<p class="xdef"><b>' + esc(def) + '</b> <span>(' + len + ')</span></p><div class="xlive" dir="rtl">' + live + '</div>' + mark;
+  return { head: '<p class="xdef"><b>' + esc(def) + '</b> <span>(' + len + ')</span></p>', live, mark };
 }
 /* the pin: an open lock while typing moves on, a closed one while the cursor stays in its cell */
 const XLOCK = {
@@ -547,9 +558,13 @@ function xwFinal(ch) { return ({ 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף',
 /* the bar keeps one height: a long definition takes smaller type until it fits its two lines, so the board never moves */
 function xwFitBar() {
   const p = ST.view.querySelector('#xw-bar .xdef'); if (!p) return;
+  /* the size found for a word is kept for the board (per width), so moving between words while typing measures once */
+  const g = ST.xg, key = g && !g.done ? g.act + ':' + p.clientWidth : null, kept = key && g._barFs && g._barFs[key];
+  if (kept) { p.style.fontSize = kept; return; }
   p.style.fontSize = '';
   let size = 0.98;
   while (p.scrollHeight > p.clientHeight + 1 && size > 0.62) { size -= 0.04; p.style.fontSize = size.toFixed(2) + 'rem'; }
+  if (key) (g._barFs = g._barFs || {})[key] = p.style.fontSize || '';
 }
 function renderXW() {
   const g = ST.xg;
@@ -572,10 +587,9 @@ function renderXW() {
   $('quit').onclick = () => { if (!g.done && g.b.L.every((ch, k) => !ch || g.typed[k])) xwSummary(); else goBack(); };
   /* a personal board offers a new one; the daily board does not lead away to a personal one */
   if ($('xw-new')) $('xw-new').onclick = () => startXW();
-  $('xw-bar').onclick = ev => { if (ev.target.closest('#xw-sum')) { xwSummary(); return; } const t = ev.target.closest('[data-k]'); if (!t || ST.xg.done) return; ST.xg.cur = +t.dataset.k; xwPaint(); xwSave(); };
+  $('xw-bar').onclick = ev => { if (ev.target.closest('#xw-sum')) { xwSummary(); return; } const t = ev.target.closest('[data-k]'); if (!t || ST.xg.done) return; ST.xg.cur = +t.dataset.k; xwPatch(); xwSaveSoon(); };
   $('xw-grid').onclick = ev => { const t = ev.target.closest('[data-k]'), q = ev.target.closest('.xq'); if (t) xwTap(+t.dataset.k, q ? +q.dataset.wi : undefined); };
-  ST.view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => xwType(b.dataset.ch); });
-  $('xw-del').onclick = xwDel;
+  xwKeys(ST.view.querySelector('.xkb'));
   $('xw-hint').onclick = xwHint;
   $('xw-clear').onclick = xwClear;
   /* the pin belongs to the board in hand and is not kept: every board opens with it off */
@@ -623,7 +637,8 @@ window.addEventListener('resize', () => { if (R.tab === 'xw' && R.sub === 'board
 function xwPaint() {
   const g = ST.xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
   $('xw-grid').innerHTML = xwBoardHtml();
-  $('xw-bar').innerHTML = xwBarHtml(); xwFitBar();
+  const bp = xwBarParts(); $('xw-bar').innerHTML = xwBarHtml(); xwFitBar();
+  g._bar = { key: g.act + (g.done ? 'd' : ''), live: bp.live, mark: bp.mark };
   const hl = XW_HINTS - g.hint.size, hb = $('xw-hint');
   hb.textContent = 'רמז (' + hl + ') 💡'; hb.disabled = hl <= 0 || g.done;
   const pb = $('xw-pin'), pin = !!g.pin;
@@ -632,14 +647,72 @@ function xwPaint() {
   xwFitClues();
   /* the top line says what this board is first (the daily crossword and its number, or a personal board), then how much is
      left, and the theme last, where a narrow screen may cut it */
-  const daily = g.arch || (g.day && g.b.anchor);
-  $('xw-left').innerHTML = '<b class="xname">' + (daily ? 'התשחץ היומי #' + g.b.ed + (g.arch ? ' (ארכיון)' : '') : 'לוח אישי') + '</b> · ' +
-    esc((left ? 'נשארו ' + left : 'הלוח מלא') + (daily && g.b.theme ? ', ' + g.b.theme : ', ' + g.b.words.length + ' מילים'));
+  $('xw-left').innerHTML = g._left = xwLeftHtml(left);
   /* the button beside it goes back while the board is open, and to the summary once every cell is filled */
   const qb = $('quit'); if (qb) qb.textContent = !g.done && g.b.L.every((ch, k) => !ch || g.typed[k]) ? 'סיכום' : 'חזרה';
   /* anything that changed height on this paint (a line of text that wrapped) must not push the keyboard under the tab bar */
   const kb = ST.view.querySelector('.xkb'), tabs = document.getElementById('tabs'), grid = $('xw-grid');
   if (kb && tabs && grid && grid.style.width && kb.getBoundingClientRect().bottom > tabs.getBoundingClientRect().top + 1) xwFit();
+}
+function xwLeftHtml(left) {
+  const g = ST.xg, daily = g.arch || (g.day && g.b.anchor);
+  return '<b class="xname">' + (daily ? 'התשחץ היומי #' + g.b.ed + (g.arch ? ' (ארכיון)' : '') : 'לוח אישי') + '</b> · ' +
+    esc((left ? 'נשארו ' + left : 'הלוח מלא') + (daily && g.b.theme ? ', ' + g.b.theme : ', ' + g.b.words.length + ' מילים'));
+}
+/* a key, a deletion, a tap or a move of the cursor (1.11.1): the board built by xwPaint stays, and only what changed is
+   touched: the letter of a cell (its text node, beside the arrows), the classes of the cells and definitions, the letters
+   of the word in the bar (the whole bar only when the selected word changed), the count on the top line. The sizes of the
+   definitions are not worked out again, except for a definition that has just turned solved (its ✓ takes room) */
+function xwPatch() {
+  const g = ST.xg, b = g.b, grid = $('xw-grid'), bar = $('xw-bar');
+  if (!grid || !bar || grid.children.length !== b.R * b.C || !g._bar) { xwPaint(); return; }
+  const on = new Set(b.words[g.act].cells), solved = b.words.map(w => xwSolved(w)), refit = [];
+  let left = 0;
+  for (let k = 0; k < b.L.length; k++) {
+    const el = grid.children[k];
+    if (b.L[k]) {
+      if (!g.typed[k]) left++;
+      const sol = g.cw[k].some(i => solved[i]), pk = g.peek && !g.typed[k];
+      const cls = 'cell-letter' + (on.has(k) ? ' on' : '') + (k === g.cur ? ' cur' : '') + (g.bad.has(k) ? ' bad' : '') + (g.hint.has(k) ? ' hint' : '') +
+        (g.hint.has(k) || sol ? ' lock' : '') + (sol ? ' sol' : '') + (pk ? ' peek' : '');
+      if (el.className !== cls) el.className = cls;
+      const t = pk ? b.L[k] : norm(g.typed[k] || ''), n = el.firstChild;
+      if (n && n.nodeType === 3) { if (!t) n.remove(); else if (n.data !== t) n.data = t; }
+      else if (t) el.insertBefore(document.createTextNode(t), n);
+      for (const a of el.children) if (a.classList.contains('xa')) a.classList.toggle('done', solved[+a.dataset.wi]);
+    } else if (b.K[k]) {
+      const ks = b.K[k], cls = 'cell-clue' + (ks.some(x => x.wi === g.act) ? ' kon' : '') + (ks.length > 1 ? ' two' : '') + (ks.every(x => solved[x.wi]) ? ' solved' : '');
+      if (el.className !== cls) el.className = cls;
+      for (const q of el.children) {
+        const wi = +q.dataset.wi, qc = 'xq ' + (XLEFT[q.dataset.t] ? 'side-l' : 'side-b') + (wi === g.act ? ' sel' : '') + (solved[wi] ? ' done' : '');
+        if (q.className !== qc) { const was = q.classList.contains('done'); q.className = qc; if (was !== solved[wi]) refit.push(q); }
+      }
+    }
+  }
+  /* a definition just solved is sized again after the key has painted, so the key itself never waits for the measuring */
+  if (refit.length) requestAnimationFrame(() => setTimeout(() => { if (ST.xg === g) refit.forEach(q => { if (q.isConnected) xwFitOne(g, q); }); }, 0));
+  const bp = xwBarParts(), key = g.act + (g.done ? 'd' : '');
+  if (key !== g._bar.key) { bar.innerHTML = xwBarHtml(); xwFitBar(); g._bar = { key, live: bp.live, mark: bp.mark }; }
+  else if (!bp.done) {
+    if (bp.live !== g._bar.live) { const lv = bar.querySelector('.xlive'); if (lv) lv.innerHTML = bp.live; g._bar.live = bp.live; }
+    if (bp.mark !== g._bar.mark) { const mk = bar.querySelector('.xmark'); if (mk) mk.remove(); if (bp.mark) bar.insertAdjacentHTML('beforeend', bp.mark); g._bar.mark = bp.mark; }
+  }
+  const lh = xwLeftHtml(left); if (lh !== g._left) { $('xw-left').innerHTML = g._left = lh; }
+  const qb = $('quit'), qt = !g.done && !left ? 'סיכום' : 'חזרה'; if (qb && qb.textContent !== qt) qb.textContent = qt;
+}
+/* the keys of the crossword react on the touch itself (pointerdown), with one listener for the whole keyboard; the click
+   that follows a touch is passed over, and a click with no touch before it (a screen reader, Enter on a key) still types */
+function xwKeys(kb) {
+  if (!kb) return;
+  let at = -1e9;
+  const hit = b => { if (b.dataset.ch) xwType(b.dataset.ch); else if (b.id === 'xw-del') xwDel(); };
+  kb.addEventListener('pointerdown', ev => {
+    const b = ev.target.closest('button'); if (!b || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    ev.preventDefault(); at = performance.now(); b.classList.add('kp'); hit(b);
+  });
+  const up = ev => { const b = ev.target.closest && ev.target.closest('button'); if (b) b.classList.remove('kp'); };
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => kb.addEventListener(t, up));
+  kb.addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b || performance.now() - at < 1000) return; hit(b); });
 }
 /* a tap on a definition selects the word of the half that was touched; a tap elsewhere in the cell moves between its words */
 function xwTap(k, wi) {
@@ -655,7 +728,7 @@ function xwTap(k, wi) {
     else if (ws.indexOf(g.act) < 0) { const same = ws.find(i => b.words[i].h === b.words[g.act].h); g.act = same !== undefined ? same : ws[0]; }
     g.cur = k;
   }
-  xwPaint(); xwSave();
+  xwPatch(); xwSaveSoon();
 }
 function xwStep(dir) {
   const w = ST.xg.b.words[ST.xg.act], i = w.cells.indexOf(ST.xg.cur), j = i + dir;
@@ -669,7 +742,7 @@ function xwType(ch) {
   /* with the pin on, the letter replaces the one under the cursor and the cursor stays */
   if (g.pin) {
     if (xwLocked(g.cur)) { toast('המשבצת נעולה: היא שייכת למילה שנפתרה או לרמז'); return; }
-    g.typed[g.cur] = ch; g.bad.delete(g.cur); xwNoteWrong(g.cur); if (xwSolved(w)) xwNextOpen(); xwPaint(); xwSave(); xwDone(); return;
+    g.typed[g.cur] = ch; g.bad.delete(g.cur); xwNoteWrong(g.cur); if (xwSolved(w)) xwNextOpen(); xwPatch(); xwSaveSoon(); xwDone(); return;
   }
   /* the typing point: the cell after the last letter typed in this word, or the cursor when it was moved since.
      A locked letter there (from a crossing word solved, or a hint) that matches the key is taken as typed, so typing the whole
@@ -683,7 +756,7 @@ function xwType(ch) {
     const nx = w.cells.findIndex((c, x) => x > tp && !g.typed[c] && !xwLocked(c));
     if (nx >= 0) g.cur = w.cells[nx];
     g._tp = { act: g.act, cur: g.cur, i: tp + 1 };
-    xwPaint(); xwSave(); return;
+    xwPatch(); xwSaveSoon(); return;
   }
   /* the letter goes into the first free cell from the typing point on. When there is none from there to the end (the free
      cells of the word lie before it), it goes into the cursor's cell, or else the first free cell of the word. Only a word with
@@ -702,7 +775,7 @@ function xwType(ch) {
   g._tp = { act: g.act, cur: g.cur, i: i + 1 };
   /* a word just solved: on to the next open word of the board, at its first empty cell */
   if (xwSolved(w)) xwNextOpen();
-  xwPaint(); xwSave(); xwDone();
+  xwPatch(); xwSaveSoon(); xwDone();
 }
 /* a word filled in to its last cell with a wrong letter counts as a mistake of the board, for the summary and its review */
 function xwNoteWrong(k) { const g = ST.xg; g.cw[k].forEach(i => { const w = g.b.words[i]; if (w.cells.every(c => g.typed[c]) && !xwSolved(w)) g.wrongW.add(i); }); }
@@ -725,12 +798,12 @@ function xwDel() {
   if (ST.xg) ST.xg._tp = null;   /* a tap, a deletion or a cleared word starts the typing point again from the cursor */
   const g = ST.xg, k = g.cur;
   if (g.done) return;
-  if (g.typed[k] && !xwKeep(k)) { g.typed[k] = ''; g.bad.delete(k); xwPaint(); xwSave(); return; }
+  if (g.typed[k] && !xwKeep(k)) { g.typed[k] = ''; g.bad.delete(k); xwPatch(); xwSaveSoon(); return; }
   const w = g.b.words[g.act];
   let j = w.cells.indexOf(k) - 1;
   while (j >= 0 && xwKeep(w.cells[j])) j--;
   if (j >= 0) { const p = w.cells[j]; g.cur = p; g.typed[p] = ''; g.bad.delete(p); }
-  xwPaint(); xwSave();
+  xwPatch(); xwSaveSoon();
 }
 /* clear the letters of the active word, except those a hint revealed and those shared with a crossing word already solved */
 function xwClear() {
@@ -867,15 +940,17 @@ function xwArrow(dr, dc) {
     const k = r * b.C + c; if (!b.L[k]) continue;
     const ws = g.cw[k], h = dc !== 0;
     if (ws.indexOf(g.act) < 0 || b.words[g.act].h !== h) { const same = ws.find(i => b.words[i].h === h); g.act = same !== undefined ? same : ws.indexOf(g.act) >= 0 ? g.act : ws[0]; }
-    g.cur = k; g._tp = null; xwPaint(); xwSave(); return;
+    g.cur = k; g._tp = null; xwPatch(); xwSaveSoon(); return;
   }
 }
 function xwWordStep(back) {
   const g = ST.xg, ws = g.b.words, n = ws.length;
   if (!back) { if (!xwNextOpen()) return; }
   else for (let d = 1; d < n; d++) { const i = (g.act - d + n) % n, w = ws[i]; if (xwSolved(w)) continue; const k = w.cells.find(c => !g.typed[c] && !xwLocked(c)); g.act = i; g.cur = k !== undefined ? k : w.cells[0]; break; }
-  g._tp = null; xwPaint(); xwSave();
+  g._tp = null; xwPatch(); xwSaveSoon();
 }
+/* the page closed or replaced: what is waiting to be saved is written now */
+window.addEventListener('pagehide', () => { if (xwSaveT && ST.xg && ST.xg.type === 'xw') xwSave(); });
 document.addEventListener('keydown', ev => {
   if (!(R.tab === 'xw' && R.sub === 'board' && ST.xg && ST.xg.type === 'xw') || sheetOpen || ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
@@ -888,7 +963,7 @@ document.addEventListener('keydown', ev => {
   else if (k === 'ArrowUp') { ev.preventDefault(); xwArrow(-1, 0); }
   else if (k === 'ArrowDown') { ev.preventDefault(); xwArrow(1, 0); }
   else if (k === 'Enter' || k === 'Tab') { ev.preventDefault(); xwWordStep(ev.shiftKey); }
-  else if (k === ' ') { ev.preventDefault(); const ws = ST.xg.cw[ST.xg.cur]; if (ws && ws.length > 1) { ST.xg.act = ws.find(i => i !== ST.xg.act); ST.xg._tp = null; xwPaint(); xwSave(); } }
+  else if (k === ' ') { ev.preventDefault(); const ws = ST.xg.cw[ST.xg.cur]; if (ws && ws.length > 1) { ST.xg.act = ws.find(i => i !== ST.xg.act); ST.xg._tp = null; xwPatch(); xwSaveSoon(); } }
 });
 
 export { BK, XE, XKEY, XKEYS, XW_TWO, archMax, bankInit, bindLabNav, copyText, dailyShareText, keyLetter, labNavHtml, lazyFor, mmss, openArchWD, openArchXW, openArchive, renderGameReview, renderXW, renderXWReview, renderXWSetup, restoreXw, shareLines, startXWDaily, xwAns, xwCfg, xwDailyBoard, xwEdition, xwEntry, xwFromRefs, xwGame, xwInit, xwLoad, xwOpen, xwOv, xwPaint, xwPool, xwSave, xwSrc, xwStale, xwStopClock, xwTry };

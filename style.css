@@ -276,6 +276,10 @@ body.xwmode .top{display:none}
 .xkb button.del{flex:1.5 1 0;font-family:var(--f-ui);font-size:20px;background:var(--soft)}
 .xkb button.del svg{display:block;margin:auto;width:24px;height:24px}
 .xkb button:active{background:var(--brand-soft)}
+/* the crossword answers the touch at once (1.11.1): no double-tap zoom wait, no text selection, no grey flash; the pressed key
+   shows by a class set on pointerdown, with no transition */
+.xkb,.xkb button,.xgrid>*{touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.xkb button.kp{background:var(--brand-soft);transition:none}
 /* the daily challenges at the top of the learn tab: crossword and Wordle side by side */
 .hub{border-radius:14px;padding:10px;background:var(--brand);color:var(--brand-ink);display:flex;flex-direction:column;gap:8px}
 .hubh{margin:0 4px;font-weight:700;font-size:.9rem;opacity:.9}
