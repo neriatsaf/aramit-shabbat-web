@@ -145,7 +145,8 @@ textarea{min-height:84px;resize:vertical}
 .detail{grid-column:1/-1;display:flex;flex-direction:column;gap:10px;padding-top:10px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-start:6px;vertical-align:middle}
 .edited{color:var(--gold);font-weight:700;font-size:.78rem}
-.item .w .rare{display:inline-block;vertical-align:middle;margin-inline-start:6px;padding:1px 7px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--muted);font-family:var(--f-ui);font-weight:600;font-size:.68rem;line-height:1.5}
+.rare{display:inline-block;vertical-align:middle;padding:1px 7px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--muted);font-family:var(--f-ui);font-weight:600;font-size:.68rem;line-height:1.5;white-space:nowrap}
+.item .w .rare{margin-inline-start:6px}
 
 .match{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tile{border:1px solid var(--line);background:var(--surface);border-radius:12px;min-height:60px;padding:8px;display:flex;align-items:center;justify-content:center;text-align:center;overflow-wrap:anywhere;font-size:.95rem}
@@ -389,7 +390,13 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 /* 1.5.1: the bar that offers a new version, above the tab bar */
 .upd{position:fixed;left:12px;right:12px;bottom:calc(var(--tabs-h,calc(64px + env(safe-area-inset-bottom,0px))) + 8px);z-index:60;border:0;border-radius:12px;padding:12px 14px;background:var(--brand);color:var(--brand-ink);font:inherit;font-weight:700;box-shadow:0 4px 16px rgba(0,0,0,.18);cursor:pointer}
 .hold .holdl small{display:block;font-weight:400;font-size:.78rem;color:var(--brand)}
-.review.prep>div{padding:6px 0}
+.review.prep>div{padding:7px 0;display:grid;grid-template-columns:minmax(0,max-content) minmax(0,1fr) auto;align-items:baseline;column-gap:12px}
+.review.prep b{max-width:min(46vw,260px);line-height:1.35}
+.review.prep .pg{padding-inline-start:12px;border-inline-start:1px solid var(--line);line-height:1.45}
+.review.prep .rare{align-self:center}
+body.has-upd .panel{padding-bottom:calc(20px + var(--upd-h,60px))}
+body.has-upd .sheet>div{padding-bottom:calc(var(--tabs-h,calc(64px + env(safe-area-inset-bottom,0px))) + var(--upd-h,60px) + 12px)}
+body.has-upd .sheet.full>div{padding-bottom:calc(48px + var(--upd-h,60px) + env(safe-area-inset-bottom,0px))}
 /* the learning card follows the thumb: right for "זוכר", left for "לחזרה", up for "כבר מכיר" */
 .card.drag{transition:none}
 .card.fly{transition:transform .18s ease-out,opacity .18s ease-out}
@@ -398,7 +405,8 @@ h1 .beta { font-size: .55rem; font-weight: 700; letter-spacing: .04em; backgroun
 .card .swhint.no{background:var(--bad-soft);color:var(--bad)}
 .card .swhint.known{background:var(--brand-soft);color:var(--brand)}
 .knownrow{display:flex;justify-content:center;margin-top:4px}
-#lcard{position:relative;touch-action:none}
+#lcard{position:relative;touch-action:pan-y}
+#lcard.free{touch-action:auto}
 .swtip{text-align:center;margin:6px 0 0}
 @media (hover:hover){.swtip{display:none}}
 /* the first opening: the words of the level chosen, as tags that wrap; a tag left out is struck through */

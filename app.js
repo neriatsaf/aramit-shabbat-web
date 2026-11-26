@@ -9,7 +9,7 @@ function norm(s) {
 }
 function stripPrefix(s) { return s.replace(/^(וד|ו|ד)(?=.{2,})/, ''); }
 
-const VERSION = '1.10.0';
+const VERSION = '1.10.2';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -183,6 +183,7 @@ function exHtml(e) {
 }
 function fillEx() {
   document.querySelectorAll('.ctx[data-ex]').forEach(el => { if (el.firstChild) return; const r = exRow(D[+el.dataset.ex]); if (r) { el.innerHTML = exInner(r); el.hidden = false; } });
+  keepNext();
 }
 /* what is shown once an answer is given: the entry and its meaning, and for a concept the full explanation with its source */
 function afterHtml(e) { return e.cn ? '<div class="answer">' + esc(e.w) + ': ' + esc(e.s) + '</div>' + explainHtml(e) : '<div class="answer">' + esc(e.w) + ': ' + esc(gloss(e)) + '</div>' + srcHtml(e) + exHtml(e); }
@@ -830,6 +831,14 @@ function bindInstall() {
   const x = $('ins-x'); if (x) x.onclick = () => { try { localStorage.setItem('aramit-install-hide', String(Date.now() + 30 * 86400000)); } catch (e) { /* ignore */ } const b = $('install'); if (b) b.remove(); };
   const go = $('ins-go'); if (go) go.onclick = () => { const ev = installEv; installEv = null; ev.prompt(); ev.userChoice.then(() => { const b = $('install'); if (b) b.remove(); }); };
 }
+/* the bar "גרסה חדשה זמינה" floats over the bottom of the screen: screens and open sheets get room under their content for
+   it (body.has-upd and --upd-h in style.css), so it never hides the end of a sheet such as the version line of settings (1.10.2) */
+function updBar(onTap) {
+  document.body.insertAdjacentHTML('beforeend', '<button class="upd" id="upd" type="button">גרסה חדשה זמינה: לחצו לרענון</button>');
+  const u = document.getElementById('upd'), fit = () => { if (u.isConnected) document.documentElement.style.setProperty('--upd-h', (u.offsetHeight + 12) + 'px'); };
+  fit(); document.body.classList.add('has-upd'); window.addEventListener('resize', fit);
+  u.onclick = onTap;
+}
 if (!NATIVE) {
   window.addEventListener('beforeinstallprompt', ev => { ev.preventDefault(); installEv = ev; if (R.tab === 'learn' && !R.sub) { const keep = view; view = PANEL.learn; const b = $('install'); if (b) b.remove(); PANEL.learn.insertAdjacentHTML('beforeend', installHtml()); bindInstall(); view = keep; } });
   window.addEventListener('appinstalled', () => { track('appinstalled'); const b = document.getElementById('install'); if (b) b.remove(); });
@@ -839,8 +848,7 @@ if (!NATIVE) {
     /* a new version waits in the background: a bar at the bottom offers it, and a tap lets it take over and reloads */
     const offer = w => {
       if (!w || !navigator.serviceWorker.controller || document.getElementById('upd')) return;
-      document.body.insertAdjacentHTML('beforeend', '<button class="upd" id="upd" type="button">גרסה חדשה זמינה: לחצו לרענון</button>');
-      document.getElementById('upd').onclick = () => { asked = true; w.postMessage({ type: 'skip-waiting' }); setTimeout(() => location.reload(), 3000); };
+      updBar(() => { asked = true; w.postMessage({ type: 'skip-waiting' }); setTimeout(() => location.reload(), 3000); });
     };
     navigator.serviceWorker.register('sw.js').then(reg => {
       if (reg.waiting) offer(reg.waiting);
@@ -901,15 +909,16 @@ function holdHtml() {
 /* הכנה לדף: the words and concepts that appear for the first time on the last page of the range, to read before the lesson */
 function openPrep(pick) {
   const free = Number.isInteger(pick), d = free ? pick : SC.d1, ws = D.filter(e => dafNum(e.a) === d).sort((x, y) => x.a - y.a || y.c - x.c), cs = CN.filter(e => dafNum(e.a) === d);
-  const row = e => '<div><b>' + esc(e.w) + '</b> <span>' + esc(e.cn ? e.s : gloss(e)) + '</span>' + (e.rare ? ' <span class="rare">נדיר</span>' : '') + '</div>';
+  /* a row: the word, then its gloss in a column of its own, and "נדיר" as a small tag at the end of the row (1.10.2) */
+  const row = e => '<div><b>' + esc(e.w) + '</b><span class="pg">' + esc(e.cn ? e.s : gloss(e)) + '</span>' + (e.rare ? '<span class="rare">נדיר</span>' : '') + '</div>';
   /* the new words of the page: what is not known yet (never studied, or still on the way), the words first, in the order of the page */
   const fresh = ws.concat(cs).filter(e => studyOk(e) && !isKnown(e));
   openSheet('<div class="row between"><h2>הכנה לדף ' + esc(gem(d)) + '</h2><button class="link" id="pr-close">סגירה</button></div>' +
     '<p class="small muted">מה שמופיע לראשונה במסכת בדף ' + esc(gem(d)) + ': ' + ws.length + ' מילים וביטויים' + (cs.length ? ' ו-' + cs.length + ' מושגים' : '') + '.</p>' +
+    (fresh.length ? '<button class="btn wide" id="pr-new">תרגל את המילים החדשות של הדף (' + fresh.length + ')</button>' : '') +
     (cs.length ? '<h3>מושגים</h3><div class="review prep">' + cs.map(row).join('') + '</div>' : '') +
     (ws.length ? '<h3>מילים וביטויים</h3><div class="review prep">' + ws.map(row).join('') + '</div>' : '<p>בדף הזה אין מילים חדשות.</p>') +
-    (fresh.length ? '<button class="btn wide" id="pr-new">תרגל את המילים החדשות של הדף (' + fresh.length + ')</button>'
-      : (ws.length || cs.length) ? '<p class="small muted">כל מה שמופיע לראשונה בדף הזה כבר ידוע לך.</p>' : '') +
+    (!fresh.length && (ws.length || cs.length) ? '<p class="small muted">כל מה שמופיע לראשונה בדף הזה כבר ידוע לך.</p>' : '') +
     ((ws.length || cs.length) ? '<button class="btn ' + (fresh.length ? 'line' : '') + ' wide" id="pr-go">תרגול כל מילות הדף (' + (ws.length + cs.length) + ')</button>' : '') +
     (free ? (d < 157 ? '<button class="btn line wide" id="pr-next">הכנה לדף הבא (' + esc(gem(d + 1)) + ')</button>' : '')
       : '<button class="btn line wide" id="pr-scope">שינוי הטווח</button>'));
@@ -1056,17 +1065,25 @@ function renderSession() {
     yes: m.type === 'intro' ? () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); } : m.type === 'flip' ? () => { apply(item, true); advance(); } : null,
     no: m.type === 'intro' ? () => { const t = today(); S.prog[pid(e)] = { b: 0, d: t, n: 0, x: 0, f: t }; save(); requeue(item, 2); advance(); } : m.type === 'flip' ? () => { apply(item, false); advance(); } : null
   };
-  if (m.type === 'mcq' && s.stage === 'shown') return;
+  /* answered: the card lets go of touch altogether, and the screen scrolls so "הבא" is in sight above the tab bar (1.10.2) */
+  if (m.type === 'mcq' && s.stage === 'shown') { $('lcard').classList.add('free'); keepNext(); return; }
   cardSwipe($('lcard'), acts);
 }
+/* an answered card: "הבא" scrolled into sight (again once the context sentence arrives and makes the card taller) */
+function keepNext() { const nx = document.querySelector('#lcard.free #next'); if (nx && nx.scrollIntoView) nx.scrollIntoView({ block: 'nearest' }); }
 function cardSwipe(card, acts) {
   if (!card) return;
   const hint = card.querySelector('.swhint'), LABEL = { yes: 'זוכר', no: 'לחזרה', known: 'כבר מכיר ✓' };
-  let x0 = 0, y0 = 0, dx = 0, dy = 0, on = false, kind = null;
-  const which = () => (-dy > 70 && -dy > Math.abs(dx)) ? 'known' : dx > 80 ? 'yes' : dx < -80 ? 'no' : null;
-  card.addEventListener('touchstart', ev => { if (ev.touches.length !== 1 || ev.target.closest('button,a,input')) return; const t = ev.touches[0]; x0 = t.clientX; y0 = t.clientY; dx = dy = 0; on = true; card.classList.add('drag'); }, { passive: true });
+  /* the card takes horizontal moves only (touch-action: pan-y), so the screen always scrolls up and down under the thumb.
+     A move that scrolled the screen is a scroll, never "כבר מכיר" (1.10.2) */
+  const pane = card.closest('.panel') || document.scrollingElement;
+  let x0 = 0, y0 = 0, dx = 0, dy = 0, on = false, kind = null, st0 = 0;
+  const scrolled = () => Math.abs(pane.scrollTop - st0) > 2;
+  const which = () => scrolled() ? null : (-dy > 70 && -dy > Math.abs(dx)) ? 'known' : dx > 80 ? 'yes' : dx < -80 ? 'no' : null;
+  card.addEventListener('touchstart', ev => { if (ev.touches.length !== 1 || ev.target.closest('button,a,input')) return; const t = ev.touches[0]; x0 = t.clientX; y0 = t.clientY; dx = dy = 0; st0 = pane.scrollTop; on = true; card.classList.add('drag'); }, { passive: true });
   card.addEventListener('touchmove', ev => {
     if (!on) return; const t = ev.touches[0]; dx = t.clientX - x0; dy = t.clientY - y0;
+    if (scrolled()) { dx = dy = 0; }
     /* in a right-to-left page a move to the right is positive dx all the same */
     card.style.transform = 'translate(' + dx * 0.6 + 'px,' + Math.min(0, dy) * 0.6 + 'px) rotate(' + dx / 40 + 'deg)';
     kind = which(); if (kind && !acts[kind]) kind = null;
@@ -3675,7 +3692,7 @@ if (SYNC) {
 try { if (sessionStorage.getItem('pshita-restored')) { sessionStorage.removeItem('pshita-restored'); toast('ההתקדמות שוחזרה מהעותק השמור במכשיר'); } } catch (e) { /* ignore */ }
 setTimeout(iosHint, 2500);
 /* a read-only look inside, for the automated tests only */
-if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()], pkDafs: k => pkDafs(k), locShare: () => locShareText(), locLink: () => locLink(game), locSeed: () => locSeedOf(game.qs), dafPts: d => dafPts(d), xwTwo: () => XW_TWO.map(e => e.w),
+if (/[?&]test\b/.test(location.search)) window.__t = { pools: () => { const r = { quiz: quizItems(), xw: xwPool() }; r.games = gamePool(0); r.xwSrc = xwCfg.src; r.by = SC.by; r.kind = SC.kind; return r; }, wdScore: (a, b) => wdScore(a, b), wdClues: () => window.DAILY.wordle.map(r => { const e = xwEntry(r[0], r[1]), c = WDC[xwSrc(e) + ':' + e.w] || ''; return [e.w, c, c && rootLeak(e.w, c.replace(/_+/g, ' ')), !!c && answerInGloss(e.w, c)]; }), wdShare: () => wdShareText(), streak: l => streakOf(l), streakInfo: l => streakInfo(l), hold: () => holdLabel(), grade: (w, ok, rc) => grade(BYID.get(w), ok, rc), newToday: () => newToday(), backupDue: () => backupDue(), prog: w => S.prog[pid(BYID.get(w))], known: w => isKnown(BYID.get(w)), game: () => game, xw: () => xg, wd: () => wd, wdDict: () => [...wdDict()], wdValid: w => wdValid(w), heLoaded: () => !!window.HE_WORDS5, openDaily: day => { const b = xwDailyBoard(day); const g = xwGame(b); g.day = day; xwOpen(g); }, R: () => R, shown: () => shownTab, session: () => session, edition: d => xwEdition(d || localDay()), allDaily: () => window.DAILY.boards.map((d, i) => !!xwFromRefs(d.R, d.C, d.words)).filter(x => !x).length, glossFor: (w, m) => { const e = BYID.get(w) || BK.find(b => b.w === w); return e ? getGlossForMode(e, m) : ''; }, xwTry: () => xwTry(shuffle(xwPool())), xwPool: () => xwPool(), xwCfg: () => xwCfg, xwGloss: e => getGlossForMode(e, 'crossword'), archXW: n => openArchXW(n), archWD: n => openArchWD(n), archMax: () => archMax(), openArchive: () => openArchive(), openSettings: () => openSettings(), updBar: () => updBar(() => {}), openPrep: d => openPrep(d), leak: e => { const o = xwOv(e); return !o && rootLeak(e.w, String(e.cn || e.xe ? e.s : short(e)).replace(/\s*\([^)]*\)/g, '')); }, cards: () => [...BYID.keys()], pkDafs: k => pkDafs(k), locShare: () => locShareText(), locLink: () => locLink(game), locSeed: () => locSeedOf(game.qs), dafPts: d => dafPts(d), xwTwo: () => XW_TWO.map(e => e.w),
   today: () => today(), applyBackup: o => applyBackup(o), backupText: () => backupText(), setProg: (w, p) => { S.prog[pid(BYID.get(w))] = p; save(); }, pickMode: w => pickMode({ e: BYID.get(w), isNew: false }), markKnown: w => markKnown(BYID.get(w)), studyOk: w => studyOk(BYID.get(w)), exHtml: i => exHtml(D[i]), studyMode: () => studyMode(), groupQueue: l => groupQueue(l.map(x => ({ e: BYID.get(x.w), isNew: !!x.n }))), planMode: (w, isNew) => planMode({ e: BYID.get(w), isNew: !!isNew }), nav: (t, s) => nav(t, s) };
 
 /* hardware back button inside the Android app */
