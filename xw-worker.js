@@ -6,13 +6,13 @@
       { id, pool, opts } with { id, ok, R, C, words, size, tries, ms } or { id, ok: false, why }.
    2. As a plain script in the page (<script src="xw-worker.js">): it defines window.XWRect.build(pool, opts), a Promise
       that starts the worker, stops it after the time allowed, and resolves with the board or with null. On null the
-      caller falls back to the old generator (xwBuild in app.js).
+      caller falls back to the old generator (xwBuild in js/xw.js).
    3. In Node (require): the same functions, for tools/make-xw-templates.js and tests/xw-rect.js.
 
    pool: the entries the solver chose, each { s, i, w, clue } (s: source c/d/x/b, i: index in that source, w: the word as
    the store writes it, clue: the definition the cell shows). Optional per entry: pref (a higher one is tried first) and
    m (a key of meaning; two entries with the same m never stand on the same board).
-   The board comes back as words [s, i, t, clue cell, w], the form app.js saves and reads (xwFromRefs).
+   The board comes back as words [s, i, t, clue cell, w], the form js/xw.js saves and reads (xwFromRefs).
 
    The sizes are tried in order: 7 rows by 6 columns (like the daily board), then 6 by 5, then 5 by 5. A size whose
    templates need more words of some length than the pool holds is passed over at once. Each size has its share of the
@@ -20,7 +20,7 @@
 (function (root) {
   'use strict';
   const FIN = { 'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ' };
-  /* the answer as the board holds it: letters only, without vowel points, final letters made plain (as norm in app.js) */
+  /* the answer as the board holds it: letters only, without vowel points, final letters made plain (as norm in js/rules.js) */
   const base = s => String(s).replace(/[֑-ׇ]/g, '').replace(/[^א-ת]/g, '').replace(/[ךםןףץ]/g, c => FIN[c]);
   /* two forms of one word (איתא and אית, שבתא and שבת) share this key and never stand on the same board (as make-daily.js) */
   const rootOf = w => { const b = base(w).replace(/[וי]/g, ''); return b.length > 2 ? b.replace(/[אה]$/, '') : b; };
@@ -65,7 +65,7 @@
   }
   const pop = x => { x -= (x >>> 1) & 0x55555555; x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0F0F0F0F) * 0x01010101) >>> 24; };
 
-  /* the cells of a word from its arrow and its definition cell, as xwCells in app.js: column 0 is the rightmost and a
+  /* the cells of a word from its arrow and its definition cell, as xwCells in js/xw.js: column 0 is the rightmost and a
      word across runs to the next column (c + 1). l: starts on the left of the cell; ld: starts on the left and runs down;
      d: starts below and runs down; dl: starts below and runs across */
   function cellsOf(C, t, clue, n) {
