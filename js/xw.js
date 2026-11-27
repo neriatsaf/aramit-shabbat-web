@@ -692,7 +692,9 @@ function xwPatch() {
   /* a definition just solved is sized again after the key has painted, so the key itself never waits for the measuring */
   if (refit.length) requestAnimationFrame(() => setTimeout(() => { if (ST.xg === g) refit.forEach(q => { if (q.isConnected) xwFitOne(g, q); }); }, 0));
   const bp = xwBarParts(), key = g.act + (g.done ? 'd' : '');
-  if (key !== g._bar.key) { bar.innerHTML = xwBarHtml(); xwFitBar(); g._bar = { key, live: bp.live, mark: bp.mark }; }
+  /* a new word in the bar (the key that solved a word moves on to the next one): its definition is sized after the key has
+     painted too, so the key that solves a word is as quick as any other (1.12.1) */
+  if (key !== g._bar.key) { bar.innerHTML = xwBarHtml(); g._bar = { key, live: bp.live, mark: bp.mark }; requestAnimationFrame(() => setTimeout(() => { if (ST.xg === g && bar.isConnected) xwFitBar(); }, 0)); }
   else if (!bp.done) {
     if (bp.live !== g._bar.live) { const lv = bar.querySelector('.xlive'); if (lv) lv.innerHTML = bp.live; g._bar.live = bp.live; }
     if (bp.mark !== g._bar.mark) { const mk = bar.querySelector('.xmark'); if (mk) mk.remove(); if (bp.mark) bar.insertAdjacentHTML('beforeend', bp.mark); g._bar.mark = bp.mark; }
