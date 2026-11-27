@@ -11,7 +11,7 @@ import { R } from './main.js';
 export const ST = {};
 
 /* ---------- data ---------- */
-const VERSION = '1.12.1';
+const VERSION = '1.12.2';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the

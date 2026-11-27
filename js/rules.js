@@ -77,4 +77,19 @@ function rootLeak(ans, clue) {
   return '';
 }
 
-export { answerInGloss, norm, rootLeak, stripPrefix, xwLetters, xwVague };
+/* a plain Hebrew word (27.11.2026, after "עיניהן" on daily #4): an entry of the expanded store whose whole dictionary meaning
+   is one Hebrew word that is the entry itself in another spelling, full or short (בצוארו: בצווארו, דיעות: דעות), or with the
+   ending ן ין יהן for ם ים יהם (עיניהן: עיניהם, אגוזין: אגוזים). Such a word is Hebrew, not the Aramaic of the Gemara, and the
+   crossword never asks for it. The key leaves out ו and י, makes the final letters plain and reads a last נ as מ.
+   The callers ask it of the expanded store only (the chosen store and the concepts are never left out by it), and the words
+   of HE_KEEP are Aramaic or Talmudic forms of their own that only look so (פריש, אריך, ביך, אבוהון, נייחן, לרכוכי...).
+   An entry whose meaning is more than one word (חכים: "מחכים, נעשה חכם") is never caught, and needs no place in the list */
+const HE_KEEP = new Set(('פריש אריך ביך חכימת אבוהון נייחן תלמידיהון אבוך הוית אמרית קריבית שאילית קבעית ידעיתון תרצת שליף פסיל שליט טריד סתיר חליש קביע צליל זקיף מהיל חתים פשיט גביל לקיט גניב סביל עניש נגיב נקיל מית טב טמיא ניגזר ניגמור ניפרוס ותיפשיט מיגליין גליין מיפקיד מידביק מיגבל מיסתכן מיקיל מישך מידק מצלח מסרח מקפד מפקר פנק כוויץ לינק איכרך ומושיף וקביר לרכוכי לקרורי לקבולי לזילזולי להרהורי מזוני בחמימי חרדלי נרדי עפרי ארנקי בנייני ציחצוחי בישולי ספוקי טיבותיך שקיך אחריני חברין לידן ידעין נבחין כאיבין הוויין מאיסן').split(' '));
+const heKey = w => { let k = String(w).replace(/[\u0591-\u05C7]/g, '').replace(/[ךםןףץ]/g, c => FIN[c]).replace(/[וי]/g, ''); if (k.endsWith('נ')) k = k.slice(0, -1) + 'מ'; return k; };
+function plainHebrew(w, gloss) {
+  const a = String(w).replace(/[\u0591-\u05C7]/g, '').trim(), g = String(gloss).replace(/[\u0591-\u05C7]/g, '').trim();
+  if (HE_KEEP.has(a) || !/^[א-ת]+$/.test(a) || !/^[א-ת]+$/.test(g)) return false;
+  return heKey(a) === heKey(g);
+}
+
+export { HE_KEEP, answerInGloss, norm, plainHebrew, rootLeak, stripPrefix, xwLetters, xwVague };

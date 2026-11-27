@@ -1,6 +1,6 @@
 /* פשיטא: the arrow crossword (תשחץ): the daily board, personal boards, the archive, the board on screen */
 import './locator.js';   /* first: keeps the modules running in order */
-import { answerInGloss, norm, rootLeak, xwLetters, xwVague } from './rules.js';
+import { answerInGloss, norm, plainHebrew, rootLeak, xwLetters, xwVague } from './rules.js';
 import { $, APP_URL, BETA, CN, D, NATIVE, PEREKS, S, SC, ST, WORDS, XWN, bare, bindSeg, cSource, countLine, dafName, esc, getGlossForMode, gloss, inScope, lazyWait, loadScript, noParens, ordPk, pid, sameMeaning, save, short, shuffle, timers, toast, track } from './state.js';
 import { dayOf, holdLabel, reviewHtml, xwStreak, xwStreakInfo } from './learn.js';
 import { DEL_SVG, drillOn } from './dict.js';
@@ -88,7 +88,8 @@ const XN = 9;
    No levels (24.11.2026): from the whole store only the chosen store, without the rare words of the expanded store */
 /* a word that is not clean (a prefix, the same as in Hebrew, a letter's name) is never asked for (XW_SKIP, tools/make-xwskip.js) */
 let XW_SKIP = new Set();
-const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return !XW_SKIP.has(xwSrc(e) + ':' + e.w) && t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
+/* nor an entry of the expanded store whose whole meaning is the same word in Hebrew (עיניהן: עיניהם; plainHebrew, rules.js) */
+const xwOk = (e, txt, lim) => { const o = xwOv(e), t = o || txt; return !XW_SKIP.has(xwSrc(e) + ':' + e.w) && !(e.ext && plainHebrew(e.w, e.m0)) && t.length <= lim && !answerInGloss(e.w, o || (e.bk ? e.s : e.m0)) && !xwVague(e.w, t) && !rootLeak(e.w, String(t).replace(/\s*\([^)]*\)/g, '')); };
 let XW_ALL = [], XW_TWO = [];
 /* the crossword pools, once bank.js and xwclues.js are in */
 function xwInit() {
@@ -968,4 +969,4 @@ document.addEventListener('keydown', ev => {
   else if (k === ' ') { ev.preventDefault(); const ws = ST.xg.cw[ST.xg.cur]; if (ws && ws.length > 1) { ST.xg.act = ws.find(i => i !== ST.xg.act); ST.xg._tp = null; xwPatch(); xwSaveSoon(); } }
 });
 
-export { BK, XE, XKEY, XKEYS, XW_TWO, archMax, bankInit, bindLabNav, copyText, dailyShareText, keyLetter, labNavHtml, lazyFor, mmss, openArchWD, openArchXW, openArchive, renderGameReview, renderXW, renderXWReview, renderXWSetup, restoreXw, shareLines, startXWDaily, xwAns, xwCfg, xwDailyBoard, xwEdition, xwEntry, xwFromRefs, xwGame, xwInit, xwLoad, xwOpen, xwOv, xwPaint, xwPool, xwSave, xwSrc, xwStale, xwStopClock, xwTry };
+export { BK, XE, XKEY, XKEYS, XW_ALL, XW_TWO, archMax, bankInit, bindLabNav, copyText, dailyShareText, keyLetter, labNavHtml, lazyFor, mmss, openArchWD, openArchXW, openArchive, renderGameReview, renderXW, renderXWReview, renderXWSetup, restoreXw, shareLines, startXWDaily, xwAns, xwCfg, xwDailyBoard, xwEdition, xwEntry, xwFromRefs, xwGame, xwInit, xwLoad, xwOpen, xwOv, xwPaint, xwPool, xwSave, xwSrc, xwStale, xwStopClock, xwTry };
