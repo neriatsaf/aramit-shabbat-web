@@ -672,3 +672,32 @@ body.kbmode .tabs button[aria-selected="true"] i{background:transparent}
 .locverdict.lose{color:var(--bad)}
 .locverdict.tie{color:var(--gold)}
 .loclist em.locrv{display:block;font-style:normal;font-size:.8rem;color:var(--muted)}
+.locintro .lrnote{margin:0}
+/* "ההתקדמות שלי" (1.13): three quiet tiles, rows of streaks and bests, a compact bar for each chapter */
+.mpsec{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--line);min-width:0}
+.mpsec h3{margin:0}
+.mpsec>p{margin:0}
+.mptiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.mptiles div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 6px;text-align:center;display:flex;flex-direction:column;gap:2px;min-width:0}
+.mptiles b{font-size:1.45rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.mptiles span{font-size:.8rem;color:var(--muted)}
+.mptiles .t-k b{color:var(--good)}
+.mptiles .t-l b{color:var(--gold)}
+.mpbar{height:8px}
+.mprow{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px dashed color-mix(in srgb,var(--line) 70%,transparent)}
+.mprow:last-child{border-bottom:0}
+.mprow span{min-width:0;overflow-wrap:anywhere}
+.mprow b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.mprow small{grid-column:1/-1;color:var(--muted);font-size:.8rem}
+.mpnone{font-style:normal;font-weight:400;color:var(--muted)}
+.mppks{display:flex;flex-direction:column;gap:2px}
+.mppk{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;width:100%;text-align:start;background:none;border:0;border-radius:10px;padding:7px 6px;color:var(--ink);font:inherit}
+.mppk:active,.mppk:hover{background:var(--soft)}
+.mppk .mpn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.95rem}
+.mppk b{font-size:.85rem;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.mppk .pbar{grid-column:1/-1;height:5px}
+.mpwords .mk{display:inline-block;width:1.1em;font-style:normal;text-align:center;margin-inline-end:4px}
+.mpwords .mk.k{color:var(--good)}
+.mpwords .mk.l{color:var(--gold)}
+.mpwords .mk.n::before{content:"";display:inline-block;width:.5em;height:.5em;border:1.5px solid var(--line);border-radius:50%}
+.review.prep.mpwords>div{grid-template-columns:auto minmax(0,max-content) minmax(0,1fr)}

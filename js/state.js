@@ -11,7 +11,7 @@ import { R } from './main.js';
 export const ST = {};
 
 /* ---------- data ---------- */
-const VERSION = '1.12.4';
+const VERSION = '1.13.0';
 /* the public address of the web version, added to every shared result, from the Android app and from the browser alike */
 const APP_URL = 'https://pshita.tsafrir.com/';
 /* where "דיווח על טעות" goes: the email address that receives the reports. The button opens the reader's mail app with the
@@ -154,7 +154,27 @@ const BYID = new Map(); D.forEach(e => BYID.set(e.w, e)); CN.forEach(c => BYID.s
 ST.glossPure = false;
 function gloss(e) { return (!ST.glossPure && S.edits[pid(e)]) || e.m0; }
 /* the bank of repeated mistakes: an entry goes in on a wrong answer and leaves after two right answers in a row */
-function noteAnswer(e, ok) { const k = pid(e); if (!ok) S.miss[k] = 2; else if (S.miss[k]) { if (--S.miss[k] <= 0) delete S.miss[k]; } }
+function noteAnswer(e, ok) { const k = pid(e); markStudyDay(); if (!ok) S.miss[k] = 2; else if (S.miss[k]) { if (--S.miss[k] <= 0) delete S.miss[k]; } }
+/* the days of study (1.13), for the streak of "ההתקדמות שלי": day numbers (today()) in S.settings.studyDays, one a day with an
+   answer in the learning screen. A state from before 1.13 has no such list: it starts from the days the progress already keeps
+   (the day an entry was first learned, f, and the day of its last review, ls), so a learner who studied yesterday keeps the
+   streak. Old backups and old versions read the state as before; they only leave the list out */
+function studyDays() {
+  if (!Array.isArray(S.settings.studyDays)) {
+    const set = new Set(); Object.values(S.prog || {}).forEach(p => { if (p && Number.isInteger(p.f)) set.add(p.f); if (p && Number.isInteger(p.ls)) set.add(p.ls); });
+    S.settings.studyDays = [...set].sort((a, b) => a - b).slice(-800);
+  }
+  return S.settings.studyDays;
+}
+function markStudyDay() { const d = today(), L = studyDays(); if (L[L.length - 1] !== d) { L.push(d); L.sort((a, b) => a - b); if (L.length > 800) L.splice(0, L.length - 800); } }
+/* a run of days in a row: the current one (counting back from today, or from yesterday while today is still open) and the longest */
+function dayRuns(days) {
+  const s = new Set(days), t = today(); let cur = 0, d = s.has(t) ? t : t - 1;
+  while (s.has(d)) { cur++; d--; }
+  let best = 0, run = 0, prev = null;
+  [...s].sort((a, b) => a - b).forEach(x => { run = prev !== null && x === prev + 1 ? run + 1 : 1; best = Math.max(best, run); prev = x; });
+  return { cur, best };
+}
 function isFav(e) { return !!S.fav[pid(e)]; }
 function toggleFav(e) { const k = pid(e); if (S.fav[k]) delete S.fav[k]; else S.fav[k] = 1; save(); }
 function starHtml(e) { const on = isFav(e); return '<button class="star' + (on ? ' on' : '') + '" data-star="' + esc(pid(e)) + '" aria-pressed="' + on + '" aria-label="' + (on ? 'הסרה מהמועדפים' : 'הוספה למועדפים') + '">' + (on ? '★' : '☆') + '</button>'; }
@@ -702,4 +722,4 @@ function lazyWait(names, fn, args) {
   return true;
 }
 
-export { $, APP_URL, BETA, BY, BYDAF, BYID, CN, CNBYDAF, CORE_N, D, FEEDBACK_EMAIL, INTERVALS, KEY, KINDS, KNOWN_BOX, KNOWN_RUN, NATIVE, PANEL, PEREKS, PHRASES, RAIL, RESET_AT, RESET_KEY, S, SC, STANDALONE, SYNC, TOPICS, VERSION, WORDS, XWN, afterHtml, altLine, bare, bindScope, bindSeg, bindStars, cSource, countLine, dafName, dafNum, dafShort, distractors, dotColor, dpBind, dpHtml, dpPkOf, dpRangeBind, dpRangeHtml, esc, exHtml, explainHtml, fsrsOf, getGlossForMode, gloss, grade, hebNum, inScope, isDue, isFav, isKnown, lazyHas, lazyWait, lev, load, loadScript, makeCQuestion, makeQuestion, markKnown, migrate, nConcepts, need, newToday, noParens, noteAnswer, openProgress, openScope, optionsHtml, ordPk, pickDistinct, pid, pkOf, pool, promptHtml, qCard, recallNow, restoreSc, sameMeaning, sample, save, saveSc, scopeBar, scopeHtml, scopeItems, short, shuffle, srcHtml, stageName, starHtml, stats, stopTimers, studyOk, timers, toast, today, track, ver };
+export { dayRuns, studyDays, $, APP_URL, BETA, BY, BYDAF, BYID, CN, CNBYDAF, CORE_N, D, FEEDBACK_EMAIL, INTERVALS, KEY, KINDS, KNOWN_BOX, KNOWN_RUN, NATIVE, PANEL, PEREKS, PHRASES, RAIL, RESET_AT, RESET_KEY, S, SC, STANDALONE, SYNC, TOPICS, VERSION, WORDS, XWN, afterHtml, altLine, bare, bindScope, bindSeg, bindStars, cSource, countLine, dafName, dafNum, dafShort, distractors, dotColor, dpBind, dpHtml, dpPkOf, dpRangeBind, dpRangeHtml, esc, exHtml, explainHtml, fsrsOf, getGlossForMode, gloss, grade, hebNum, inScope, isDue, isFav, isKnown, lazyHas, lazyWait, lev, load, loadScript, makeCQuestion, makeQuestion, markKnown, migrate, nConcepts, need, newToday, noParens, noteAnswer, openProgress, openScope, optionsHtml, ordPk, pickDistinct, pid, pkOf, pool, promptHtml, qCard, recallNow, restoreSc, sameMeaning, sample, save, saveSc, scopeBar, scopeHtml, scopeItems, short, shuffle, srcHtml, stageName, starHtml, stats, stopTimers, studyOk, timers, toast, today, track, ver };

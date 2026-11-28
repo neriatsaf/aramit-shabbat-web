@@ -1,7 +1,7 @@
 /* פשיטא: the game "איפה בגמרא?": which chapter and page a passage comes from, and the friend challenge */
 import './games.js';   /* first: keeps the modules running in order */
-import { $, APP_URL, PEREKS, S, ST, VERSION, dafNum, esc, hebNum, ordPk, save, shuffle, toast, track } from './state.js';
-import { doneButtons } from './learn.js';
+import { $, APP_URL, PEREKS, S, SC, ST, VERSION, dafNum, esc, hebNum, ordPk, save, shuffle, toast, track } from './state.js';
+import { doneButtons, gem } from './learn.js';
 import { renderGames } from './games.js';
 import { copyText, shareLines } from './xw.js';
 import { R, calm, goBack, nav } from './main.js';
@@ -46,22 +46,52 @@ function openLoc() {
 function locBest() { return S.best.locN; }
 /* the scoring as a short table: a number never sits beside a full stop, so nothing wraps the wrong way round in RTL */
 const LOC_RULES = [['דף מדויק', 100], ['דף אחד ממנו', 85], ['שני דפים ממנו', 70], ['שלושה דפים ממנו', 55], ['דף רחוק יותר בפרק', 40], ['פרק סמוך', 20]];
+/* the range of a round (1.13): the whole tractate, or up to the page chosen in "מה מתרגלים" (SC.d1 when the range is by page).
+   A round is always ten passages, so the score, the best and a friend's link stay as they were; when the range holds fewer
+   than ten, the rest come from the nearest pages after it, and the screen says so */
+function locMine() { return SC.by === 'daf' && Number.isInteger(SC.d1) ? SC.d1 : null; }
+function locRange() { return S.settings.locRange === 'mine' && locMine() ? 'mine' : 'all'; }
+function locInRange(p, d1) { return parseInt(p.s, 10) <= d1; }
+function locRangeNote() {
+  const d1 = locMine();
+  if (!d1) return '<p class="small muted lrnote">כדי לשחק עד הדף שלך, בחרו דף ב"מה מתרגלים" במסך הלימוד.</p>';
+  if (locRange() !== 'mine') return '';
+  const n = window.PASSAGES.filter(p => locInRange(p, d1)).length;
+  return '<p class="small lrnote">' + (n >= LOC_N ? 'עד דף ' + esc(gem(d1)) + ' יש ' + n + ' קטעים, והסבב יהיה מתוכם.'
+    : 'עד דף ' + esc(gem(d1)) + ' יש ' + (n ? n + ' קטעים' : 'עדיין אין קטעים') + '. ' + (LOC_N - n) + ' הקטעים הנוספים יבואו מהדפים הקרובים שאחריו.') + '</p>';
+}
 function renderLocIntro() {
   const P = window.PASSAGES; if (!P) { renderGames(); return; }
-  const bn = locBest();
+  const bn = locBest(), d1 = locMine(), rg = locRange();
   ST.view.innerHTML = '<div class="row between"><h2>איפה בגמרא?</h2><button class="link" id="lm-back">חזרה למשחקים</button></div>' +
     '<p class="muted small" style="margin:0">קטע קצר ממסכת שבת: משנה, ברייתא מוכרת או מימרא ידועה מהדף. מזהים קודם את הפרק, ואחר כך את הדף.</p>' +
     '<section class="locintro"><div class="lihead"><b>עשרה קטעים</b><span>עד 100 נקודות לכל קטע</span></div>' +
+    '<div class="seg grid2" id="lm-range" role="group" aria-label="טווח הקטעים"><button data-r="all" aria-pressed="' + (rg === 'all') + '">כל המסכת</button>' +
+      '<button data-r="mine" aria-pressed="' + (rg === 'mine') + '"' + (d1 ? '' : ' disabled') + '>' + (d1 ? 'עד דף ' + esc(gem(d1)) : 'עד הדף שלי') + '</button></div>' +
+    locRangeNote() +
     '<ul class="locrules">' + LOC_RULES.map(r => '<li><span>' + r[0] + '</span><b>' + r[1] + '</b></li>').join('') + '<li class="zero"><span>פרק אחר</span><b>0</b></li></ul>' +
     (Number.isInteger(bn) ? '<p class="locbest">השיא שלך: <b>' + locNum(bn) + '/1,000</b></p>' : '') +
     '<button class="btn wide" id="lm-go">התחלה</button></section>';
   $('lm-back').onclick = goBack;
-  $('lm-go').onclick = startLoc;
+  $('lm-go').onclick = () => startLoc();
+  ST.view.querySelectorAll('#lm-range button').forEach(b => { b.onclick = () => { if (b.disabled) return; S.settings.locRange = b.dataset.r; save(); renderLocIntro(); }; });
 }
 /* ten passages from as many different chapters as possible, leaving out the passages of the last rounds */
 function pickLoc() {
-  const all = window.PASSAGES.map((p, i) => Object.assign({ i }, p));
-  const rk = 'loc', rec = (S.settings.locRecent && S.settings.locRecent[rk]) || [];
+  const every = window.PASSAGES.map((p, i) => Object.assign({ i }, p)), d1 = locRange() === 'mine' ? locMine() : null;
+  if (d1) {
+    const inR = every.filter(p => locInRange(p, d1));
+    /* fewer than ten up to the page: all of them, and the nearest pages after it (the same page in turn, at random) */
+    if (inR.length < LOC_N) {
+      const after = shuffle(every.filter(p => !locInRange(p, d1))).sort((x, y) => parseInt(x.s, 10) - parseInt(y.s, 10));
+      return shuffle(inR.concat(after.slice(0, LOC_N - inR.length)));
+    }
+    return pickFrom(inR, 'mine');
+  }
+  return pickFrom(every, 'loc');
+}
+function pickFrom(all, rk) {
+  const rec = (S.settings.locRecent && S.settings.locRecent[rk]) || [];
   const keep = Math.max(0, Math.min(rec.length, all.length - 3 * LOC_N));
   const recent = new Set(rec.slice(-keep));
   let src = shuffle(all.filter(p => !recent.has(p.i)));
@@ -121,7 +151,9 @@ function startLoc(ch) {
     S.settings.locRecent = S.settings.locRecent || {};
     S.settings.locRecent.loc = rec.concat(ch.qs.map(p => p.i)).slice(-Math.max(LOC_N, window.PASSAGES.length - LOC_N)); save();
   }
-  ST.game = { type: 'loc', qs: ch && ch.qs ? ch.qs : pickLoc(), pos: 0, pts: [], stage: 'pk', pk: null, daf: null, rival: ch && ch.rival || null };
+  const range = ch && ch.qs ? 'all' : locRange();
+  ST.game = { type: 'loc', qs: ch && ch.qs ? ch.qs : pickLoc(), pos: 0, pts: [], stage: 'pk', pk: null, daf: null, rival: ch && ch.rival || null, range };
+  track('locator_start', { range });
   nav('games', 'loc', R.sub === 'locover' || R.sub === 'loc');
 }
 function locWhere(p) { return 'פרק ' + ordPk(p.pk - 1) + ', ' + PEREKS[p.pk - 1][0] + ', דף ' + p.d; }

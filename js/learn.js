@@ -1,6 +1,6 @@
 /* פשיטא: the learn tab: the round of the day, the learning card, page prep (הכנה לדף), the daily hub */
 import './state.js';   /* first: keeps the modules running in order */
-import { $, BETA, CN, D, INTERVALS, KNOWN_BOX, KNOWN_RUN, S, SC, ST, TOPICS, afterHtml, altLine, cSource, countLine, dafName, dafNum, esc, exHtml, explainHtml, fsrsOf, gloss, grade, hebNum, isDue, isKnown, markKnown, newToday, noteAnswer, openProgress, openScope, optionsHtml, pid, promptHtml, save, saveSc, scopeBar, scopeItems, shuffle, srcHtml, stats, studyOk, toast, today, track } from './state.js';
+import { $, BETA, CN, D, INTERVALS, KNOWN_BOX, KNOWN_RUN, S, SC, ST, TOPICS, afterHtml, altLine, cSource, countLine, dafName, dafNum, esc, exHtml, explainHtml, fsrsOf, gloss, grade, hebNum, isDue, isKnown, markKnown, dayRuns, studyDays, PEREKS, ordPk, CORE_N, newToday, noteAnswer, openProgress, openScope, optionsHtml, pid, promptHtml, save, saveSc, scopeBar, scopeItems, shuffle, srcHtml, stats, studyOk, toast, today, track } from './state.js';
 import { drillOn } from './dict.js';
 import { makeQ } from './quiz.js';
 import { copyText, dailyShareText, shareResult, mmss, openArchive, startXWDaily, xwDailyBoard, xwEdition, xwLoad } from './xw.js';
@@ -88,7 +88,7 @@ function renderLearn() {
     '<button class="btn wide" id="go"' + (list.length ? '' : ' disabled') + '>' + (!list.length ? 'אין ערכים בבחירה הזו' : drill ? 'תרגול הרשימה (' + todo + ')' : todo ? 'התחלת הלימוד של היום (' + todo + ')' : 'להמשיך ללמוד') + '</button></div>' +
     (list.length ? '<div class="stack"><div class="bar">' + seg.map(s => s[1] ? '<i style="background:' + s[0] + ';width:' + (s[1] / st.total * 100) + '%"></i>' : '').join('') + '</div>' +
     '<div class="legend"><span style="--c:var(--good)">ידועים ' + seg[3][1] + '</span><span style="--c:var(--brand)">בתהליך ' + seg[2][1] + '</span><span style="--c:var(--gold)">בתחילת הדרך ' + seg[1][1] + '</span><span style="--c:var(--line)">עוד לא נלמדו ' + st.fresh + '</span></div>' +
-    '<button class="link start" id="pg-open">פירוט ההתקדמות לפי פרקים ונושאים</button></div>' : '') +
+    '<button class="link start" id="pg-open">ההתקדמות שלי ‹</button></div>' : '') +
     (drill ? '<p class="note">' + (SC.by === 'fav' ? 'תרגול של הערכים שסימנת בכוכב.' : 'תרגול של הערכים שטעית בהם. ערך יוצא מהרשימה אחרי שתי תשובות נכונות ברצף.') + ' תשובה נכונה כאן לא משנה את לוח החזרות, וטעות מחזירה את הערך להתחלה.</p>' :
     '<p class="small muted">תשובה נכונה מרחיקה את החזרה הבאה לפי כמה הערך כבר יציב אצלך בזיכרון, מיום אחד ועד חצי שנה. טעות מחזירה את הערך להתחלה. ' + (studyMode() === 'mcq' ? 'ערך נחשב ידוע כשהוא יציב אצלך בזיכרון שבועיים ומעלה.' : 'ערך נחשב ידוע רק אחרי שזכרת אותו בעצמך לפחות פעם אחת, בכרטיס שהופכים.') + '</p>');
   ST.view.insertAdjacentHTML('afterbegin', dailyCardHtml() + holdHtml()); $('h-xw').onclick = startXWDaily; $('h-wd').onclick = startWordle;
@@ -103,7 +103,7 @@ function renderLearn() {
   ST.view.insertAdjacentHTML('beforeend', installHtml()); bindInstall();
   $('go').onclick = () => startSession();
   $('sc-open').onclick = () => openScope(renderLearn);
-  const pg = $('pg-open'); if (pg) pg.onclick = openProgress;
+  const pg = $('pg-open'); if (pg) pg.onclick = () => openMyProgress();
 }
 function buildQueue(kind) {
   const list = scopeItems();
@@ -305,4 +305,58 @@ function reviewHtml(ms) {
     '<br><span class="src">' + esc(m.e.cn ? cSource(m.e) : countLine(m.e) + ' · לראשונה ב' + dafName(m.e.a)) + '</span></div>').join('') + '</div>';
 }
 
-export { dayOf, doneButtons, groupQueue, holdLabel, keepNext, openPrep, pickMode, planMode, renderLearn, renderLearnReview, renderMore, renderSession, renderSessionDone, reviewHtml, studyMode, xwStreak, xwStreakInfo };
+/* ---------- "ההתקדמות שלי" (1.13): what is known of the 1,022 entries of the chosen store, the streaks and the bests, and a
+   bar for each of the 24 chapters; a chapter opens its words, with a round of them. Everything is read from the state that
+   is already kept (S.prog, S.settings, S.best); nothing new is stored but the list of study days ---------- */
+function coreOf(list) {
+  let known = 0, learning = 0; list.forEach(e => { const p = S.prog[pid(e)]; if (!p) return; if (isKnown(e)) known++; else learning++; });
+  return { known, learning, fresh: list.length - known - learning, total: list.length };
+}
+function dayNum(s) { const m = /^(\d{4})-(\d\d)-(\d\d)$/.exec(s || ''); return m ? Math.round(Date.UTC(+m[1], m[2] - 1, +m[3]) / 86400000) : null; }
+function bestRun(list) { return dayRuns((list || []).map(dayNum).filter(Number.isInteger)).best; }
+function openMyProgress() {
+  const core = D.slice(0, CORE_N), c = coreOf(core), sd = dayRuns(studyDays()), B = S.best || {};
+  const xi = streakInfo(S.settings.xwDays), wi = streakInfo(S.settings.wdDays), xb = bestRun(S.settings.xwDays), wb = bestRun(S.settings.wdDays);
+  const pc = n => (c.total ? n / c.total * 100 : 0).toFixed(1);
+  const days = n => n === 1 ? 'יום אחד' : n + ' ימים';
+  const line = (name, val, sub) => '<div class="mprow"><span>' + name + '</span><b>' + val + '</b>' + (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+  const none = '<i class="mpnone">עוד אין</i>';
+  const pkRows = PEREKS.map((pk, k) => {
+    const l = core.filter(e => e.pk === k); if (!l.length) return '';
+    const r = coreOf(l), w = r.known / r.total * 100;
+    return '<button class="mppk" data-pk="' + k + '"><span class="mpn">' + ordPk(k) + '. ' + esc(pk[0]) + '</span><b>' + r.known + '/' + r.total + '</b>' +
+      '<i class="pbar"><i style="width:' + w.toFixed(1) + '%"></i></i></button>';
+  }).join('');
+  openSheet('<div class="row between shead" id="mp-head"><h2>ההתקדמות שלי</h2><button class="link" id="mp-close">סגירה</button></div>' +
+    '<section class="mpsec"><h3>מילות הליבה</h3><p class="small muted">מתוך ' + c.total.toLocaleString('en-US') + ' המילים והביטויים של המאגר הנבחר</p>' +
+      '<div class="mptiles"><div class="t-k"><b>' + c.known + '</b><span>בשליטה</span></div><div class="t-l"><b>' + c.learning + '</b><span>בלמידה</span></div><div class="t-n"><b>' + c.fresh + '</b><span>חדשות</span></div></div>' +
+      '<div class="bar mpbar"><i style="background:var(--good);width:' + pc(c.known) + '%"></i><i style="background:var(--gold);width:' + pc(c.learning) + '%"></i></div></section>' +
+    '<section class="mpsec"><h3>רצפים ושיאים</h3>' +
+      line('ימי לימוד ברצף', sd.cur ? days(sd.cur) : none, sd.best ? 'שיא: ' + days(sd.best) : '') +
+      line('התשחץ היומי', xi.n ? 'רצף ' + days(xi.n) : none, xb ? 'שיא: ' + days(xb) : '') +
+      line('הוורדל', wi.n ? 'רצף ' + days(wi.n) : none, wb ? 'שיא: ' + days(wb) : '') +
+      line('איפה בגמרא?', Number.isInteger(B.locN) ? B.locN.toLocaleString('en-US') + '/1,000' : none) +
+      line('התאמת זוגות', B.match ? B.match + ' שנ׳' : none) +
+      line('אתגר 30 שניות', B.blitz30 ? String(B.blitz30) : none) +
+      line('השלמת ביטויים', B.fill ? B.fill + '/10' : none) + '</section>' +
+    '<section class="mpsec"><h3>לפי פרקים</h3><p class="small muted">כמה ממילות הליבה של כל פרק כבר בשליטה. כל מילה נספרת בפרק שבו היא מופיעה לראשונה. לחיצה על פרק פותחת את המילים שלו.</p>' +
+      '<div class="mppks">' + pkRows + '</div></section>' +
+    '<button class="btn line wide" id="mp-more">פירוט מלא, גם למושגים ולנושאים</button>');
+  $('mp-close').onclick = closeSheet;
+  $('mp-more').onclick = () => openProgress();
+  document.querySelectorAll('#sheet-host .mppk').forEach(b => { b.onclick = () => openPkWords(+b.dataset.pk); });
+  track('my_progress');
+}
+/* the words of one chapter: known, being learned and new, and a round of them (the range of "מה מתרגלים" moves to the chapter) */
+function openPkWords(k) {
+  const l = D.slice(0, CORE_N).filter(e => e.pk === k), r = coreOf(l);
+  const mark = e => isKnown(e) ? '<i class="mk k" aria-label="בשליטה">✓</i>' : S.prog[pid(e)] ? '<i class="mk l" aria-label="בלמידה">•</i>' : '<i class="mk n" aria-label="חדשה"></i>';
+  openSheet('<div class="row between shead" id="mpk-head"><h2>פרק ' + ordPk(k) + ': ' + esc(PEREKS[k][0]) + '</h2><button class="link" id="mpk-back">חזרה</button></div>' +
+    '<p class="small muted">' + r.known + ' בשליטה, ' + r.learning + ' בלמידה, ' + r.fresh + ' חדשות</p>' +
+    '<button class="btn wide" id="mpk-go">תרגול מילות הפרק</button>' +
+    '<div class="review prep mpwords">' + l.map(e => '<div>' + mark(e) + '<b>' + esc(e.w) + '</b><span class="pg">' + esc(gloss(e)) + '</span></div>').join('') + '</div>');
+  $('mpk-back').onclick = () => openMyProgress();
+  $('mpk-go').onclick = () => { closeSheet(); SC.kind = 'words'; SC.by = 'perek'; SC.pereks = [k]; saveSc(); track('my_progress_chapter', { pk: k + 1 }); startSession(); };
+}
+
+export { dayOf, doneButtons, gem, openMyProgress, groupQueue, holdLabel, keepNext, openPrep, pickMode, planMode, renderLearn, renderLearnReview, renderMore, renderSession, renderSessionDone, reviewHtml, studyMode, xwStreak, xwStreakInfo };
