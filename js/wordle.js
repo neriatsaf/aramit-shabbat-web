@@ -4,7 +4,7 @@ import { norm, xwLetters } from './rules.js';
 import { $, APP_URL, CN, D, NATIVE, PEREKS, S, ST, XWN, cSource, countLine, dafName, esc, getGlossForMode, gloss, lazyWait, ordPk, pkOf, save, toast, track } from './state.js';
 import { dayOf } from './learn.js';
 import { DEL_SVG } from './dict.js';
-import { BK, XE, XKEYS, bindLabNav, copyText, labNavHtml, openArchWD, shareLines, xwAns, xwEdition, xwEntry, xwSrc } from './xw.js';
+import { BK, XE, XKEYS, bindLabNav, copyText, shareResult, labNavHtml, openArchWD, shareLines, xwAns, xwEdition, xwEntry, xwSrc } from './xw.js';
 import { localDay, now, shareBackup } from './settings.js';
 import { goBack, nav } from './main.js';
 
@@ -100,7 +100,7 @@ function renderWordle() {
   ST.view.querySelectorAll('.xkb [data-ch]').forEach(b => { b.onclick = () => wdType(b.dataset.ch); });
   const del = $('wd-del'); if (del) del.onclick = wdDel;
   const en = $('wd-enter'); if (en) en.onclick = wdEnter;
-  const sh = $('wd-share'); if (sh) sh.onclick = () => copyText(wdShareText());
+  const sh = $('wd-share'); if (sh) sh.onclick = () => shareResult(wdShareText(), 'wordle');
 }
 function wdFit() {
   const grid = $('wd-grid'); if (!grid) return;
@@ -152,8 +152,8 @@ function wdEndHtml() {
 }
 function wdShareText() {
   const g = ST.wd, link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname), n = streakOf(S.settings.wdDays);
-  return shareLines(['פשיטא: הארמית של מסכת שבת', '🟩 וורדל מסכת שבת #' + g.ed + (g.arch ? ' (ארכיון)' : ''), '🎯 ניחושים: ' + (g.won ? g.rows.length : 'X') + '/6',
-    '💡 ' + (g.hint ? 'רמזים: 1' : 'בלי רמזים')].concat(g.arch ? [] : ['🔥 רצף: ' + n],
+  /* the clean form of 1.12.3: the edition and the tries on one line, then the squares of each guess; never the word itself */
+  return shareLines(['פשיטא | וורדל יומי #' + g.ed + (g.arch ? ' (ארכיון)' : '') + ' (' + (g.won ? g.rows.length : 'X') + '/6)'].concat(
     g.rows.map(w => wdScore(w, g.ans).map(v => ({ g: '🟩', y: '🟨', x: '⬜' })[v]).join(''))));
 }
 /* the streak with its lifelines (🛡️), worked out afresh from the list of solved days, so it never drifts.

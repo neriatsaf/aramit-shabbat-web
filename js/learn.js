@@ -3,7 +3,7 @@ import './state.js';   /* first: keeps the modules running in order */
 import { $, BETA, CN, D, INTERVALS, KNOWN_BOX, KNOWN_RUN, S, SC, ST, TOPICS, afterHtml, altLine, cSource, countLine, dafName, dafNum, esc, exHtml, explainHtml, fsrsOf, gloss, grade, hebNum, isDue, isKnown, markKnown, newToday, noteAnswer, openProgress, openScope, optionsHtml, pid, promptHtml, save, saveSc, scopeBar, scopeItems, shuffle, srcHtml, stats, studyOk, toast, today, track } from './state.js';
 import { drillOn } from './dict.js';
 import { makeQ } from './quiz.js';
-import { copyText, dailyShareText, mmss, openArchive, startXWDaily, xwDailyBoard, xwEdition, xwLoad } from './xw.js';
+import { copyText, dailyShareText, shareResult, mmss, openArchive, startXWDaily, xwDailyBoard, xwEdition, xwLoad } from './xw.js';
 import { WKEY, backupNote, shieldMeterHtml, shieldNotice, startWordle, streakInfo, streakOf } from './wordle.js';
 import { closeSheet, localDay, openSheet, two } from './settings.js';
 import { R, bindInstall, goBack, installHtml, nav, render } from './main.js';
@@ -60,7 +60,7 @@ function openPrep(pick) {
   const row = e => '<div><b>' + esc(e.w) + '</b><span class="pg">' + esc(e.cn ? e.s : gloss(e)) + '</span>' + (e.rare ? '<span class="rare">נדיר</span>' : '') + '</div>';
   /* the new words of the page: what is not known yet (never studied, or still on the way), the words first, in the order of the page */
   const fresh = ws.concat(cs).filter(e => studyOk(e) && !isKnown(e));
-  openSheet('<div class="row between"><h2>הכנה לדף ' + esc(gem(d)) + '</h2><button class="link" id="pr-close">סגירה</button></div>' +
+  openSheet('<div class="row between shead" id="pr-head"><h2>הכנה לדף ' + esc(gem(d)) + '</h2><button class="link" id="pr-close">סגירה</button></div>' +
     '<p class="small muted">מה שמופיע לראשונה במסכת בדף ' + esc(gem(d)) + ': ' + ws.length + ' מילים וביטויים' + (cs.length ? ' ו-' + cs.length + ' מושגים' : '') + '.</p>' +
     (fresh.length ? '<button class="btn wide" id="pr-new">תרגל את המילים החדשות של הדף (' + fresh.length + ')</button>' : '') +
     (cs.length ? '<h3>מושגים</h3><div class="review prep">' + cs.map(row).join('') + '</div>' : '') +
@@ -94,7 +94,7 @@ function renderLearn() {
   ST.view.insertAdjacentHTML('afterbegin', dailyCardHtml() + holdHtml()); $('h-xw').onclick = startXWDaily; $('h-wd').onclick = startWordle;
   /* on the first day there is nothing in the archive yet */
   if ($('h-arch')) $('h-arch').onclick = openArchive;
-  const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) copyText(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day)); };
+  const hs = $('h-share'); if (hs) hs.onclick = () => { const day = localDay(), d = S.settings.xwDaily, tb = xwDailyBoard(day); if (d && d.day === day && tb) shareResult(dailyShareText(tb, d.secs, d.hints || 0, d.checks || 0, day), 'crossword'); };
   const hp = $('hold-plus'); if (hp) hp.onclick = () => { if (SC.d1 < 157) { SC.d1++; saveSc(); render(false); toast('אוחז עד דף ' + hebNum(SC.d1)); } };
   const ho = $('hold-open'); if (ho) ho.onclick = () => openPrep();
   const pd = $('prep-d'); if (pd) pd.onchange = () => { S.settings.prepDaf = +pd.value; save(); };

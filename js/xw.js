@@ -557,16 +557,35 @@ const XLOCK = {
 };
 function xwFinal(ch) { return ({ 'כ': 'ך', 'מ': 'ם', 'נ': 'ן', 'פ': 'ף', 'צ': 'ץ' })[ch] || ch; }
 /* the bar keeps one height: a long definition takes smaller type until it fits its two lines, so the board never moves */
-function xwFitBar() {
-  const p = ST.view.querySelector('#xw-bar .xdef'); if (!p) return;
-  /* the size found for a word is kept for the board (per width), so moving between words while typing measures once */
-  const g = ST.xg, key = g && !g.done ? g.act + ':' + p.clientWidth : null, kept = key && g._barFs && g._barFs[key];
-  if (kept) { p.style.fontSize = kept; return; }
+/* the size of a definition in the bar: the largest that keeps it within two lines */
+function xwBarFs(p) {
   p.style.fontSize = '';
   let size = 0.98;
   while (p.scrollHeight > p.clientHeight + 1 && size > 0.62) { size -= 0.04; p.style.fontSize = size.toFixed(2) + 'rem'; }
-  if (key) (g._barFs = g._barFs || {})[key] = p.style.fontSize || '';
+  return p.style.fontSize || '';
 }
+/* the sizes found are kept for the board at the bar's width (g._barSz, one per word), so moving between words measures nothing */
+function xwFitBar() {
+  const p = ST.view.querySelector('#xw-bar .xdef'); if (!p) return;
+  const g = ST.xg; if (!g || g.done) { xwBarFs(p); return; }
+  const kept = g._barSz && g._barSz[g.act];
+  if (kept !== undefined) { p.style.fontSize = kept; return; }
+  (g._barSz = g._barSz || {})[g.act] = xwBarFs(p);
+}
+/* every definition of the board sized ahead, in a hidden copy of the bar of the same width, once the board is on screen and
+   again after a change of size (1.12.3): then the key or tap that selects a word sets the size it already knows, and a long
+   definition is never shown cut, not even for one frame, while the key itself still measures nothing */
+function xwBarSizeAll() {
+  const g = ST.xg, bar = $('xw-bar'); if (!g || g.done || !bar || !bar.isConnected || !bar.parentNode) return;
+  const probe = bar.cloneNode(false), act = g.act, sz = {};
+  probe.removeAttribute('id'); probe.removeAttribute('aria-live'); probe.setAttribute('aria-hidden', 'true');
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;left:0;top:0;width:' + bar.offsetWidth + 'px';
+  bar.parentNode.appendChild(probe);
+  try { for (let i = 0; i < g.b.words.length; i++) { g.act = i; probe.innerHTML = xwBarHtml(); const p = probe.querySelector('.xdef'); if (p) sz[i] = xwBarFs(p); } }
+  finally { g.act = act; probe.remove(); }
+  g._barSz = sz;
+}
+function xwBarSizeSoon(again) { const g = ST.xg; if (!g) return; if (again) g._barSz = null; setTimeout(() => { if (ST.xg === g) xwBarSizeAll(); }, 0); }
 function renderXW() {
   const g = ST.xg;
   ST.view.className = 'panel tight';
@@ -578,7 +597,7 @@ function renderXW() {
     '<div class="xtools"><button id="xw-hint"></button><button id="xw-clear">ניקוי מילה 🗑️</button><button class="pin" id="xw-pin"></button></div>' +
     '<div class="xkb" dir="ltr">' + XKEYS.map((row, i) => '<div class="r' + i + '">' + row.split('').map(ch => '<button data-ch="' + ch + '">' + ch + '</button>').join('') +
       (i === 0 ? '<button class="del" id="xw-del" aria-label="מחיקה">' + DEL_SVG + '</button>' : '') + '</div>').join('') + '</div></div></div>';
-  xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350);
+  xwPaint(); xwFit(); xwFitClues(); setTimeout(xwRefit, 350); xwBarSizeSoon();
   bindLabNav(g, g.b.ed, openArchXW, () => { renderXW(); }, 'lx');
   $('xw-help').onclick = openXWHelp;
   if (XW_HELP_AUTO && !xwHelpSeen() && !sheetOpen) setTimeout(() => { if (R.tab === 'xw' && R.sub === 'board' && !sheetOpen) openXWHelp(); }, 250);
@@ -623,7 +642,7 @@ function xwFit(depth) {
   }
 }
 /* fonts that arrive late, the address bar or the system bar of the phone change the height after the first layout */
-function xwRefit() { if (R.tab === 'xw' && R.sub === 'board' && ST.xg && ST.xg.type === 'xw' && $('xw-grid')) { xwFit(); xwFitClues(); } }
+function xwRefit() { if (R.tab === 'xw' && R.sub === 'board' && ST.xg && ST.xg.type === 'xw' && $('xw-grid')) { xwFit(); xwFitClues(); xwBarSizeSoon(true); } }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(xwRefit);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', xwRefit);
 /* the tab bar can grow after the board is laid out (the system bar of the phone, a font that arrives late) */
@@ -634,7 +653,7 @@ if (window.ResizeObserver) {
   const px = document.getElementById('p-xw'); if (px) ro.observe(px, { box: 'border-box' });
 }
 window.addEventListener('load', () => { xwRefit(); setTimeout(xwRefit, 800); });
-window.addEventListener('resize', () => { if (R.tab === 'xw' && R.sub === 'board' && ST.xg && ST.xg.type === 'xw') { xwFit(); xwFitClues(); } });
+window.addEventListener('resize', () => { if (R.tab === 'xw' && R.sub === 'board' && ST.xg && ST.xg.type === 'xw') { xwFit(); xwFitClues(); xwBarSizeSoon(true); } });
 function xwPaint() {
   const g = ST.xg, left = g.b.L.reduce((n, ch, k) => n + (ch && !g.typed[k] ? 1 : 0), 0);
   $('xw-grid').innerHTML = xwBoardHtml();
@@ -695,7 +714,12 @@ function xwPatch() {
   const bp = xwBarParts(), key = g.act + (g.done ? 'd' : '');
   /* a new word in the bar (the key that solved a word moves on to the next one): its definition is sized after the key has
      painted too, so the key that solves a word is as quick as any other (1.12.1) */
-  if (key !== g._bar.key) { bar.innerHTML = xwBarHtml(); g._bar = { key, live: bp.live, mark: bp.mark }; requestAnimationFrame(() => setTimeout(() => { if (ST.xg === g && bar.isConnected) xwFitBar(); }, 0)); }
+  if (key !== g._bar.key) {
+    bar.innerHTML = xwBarHtml(); g._bar = { key, live: bp.live, mark: bp.mark };
+    const kept = !g.done && g._barSz ? g._barSz[g.act] : undefined, p = typeof kept === 'string' ? bar.querySelector('.xdef') : null;
+    if (p) p.style.fontSize = kept;
+    else requestAnimationFrame(() => setTimeout(() => { if (ST.xg === g && bar.isConnected) xwFitBar(); }, 0));
+  }
   else if (!bp.done) {
     if (bp.live !== g._bar.live) { const lv = bar.querySelector('.xlive'); if (lv) lv.innerHTML = bp.live; g._bar.live = bp.live; }
     if (bp.mark !== g._bar.mark) { const mk = bar.querySelector('.xmark'); if (mk) mk.remove(); if (bp.mark) bar.insertAdjacentHTML('beforeend', bp.mark); g._bar.mark = bp.mark; }
@@ -862,8 +886,20 @@ function xwAids(h) { return h ? ' (רמזים: ' + h + ')' : ', בלי רמזי�
 /* the result to share, short and with nothing of the solution: the game and its edition, the time, the hints,
    the streak and the address. Each line opens with a right-to-left mark, so it reads right in a chat */
 function shareLines(lines) { const link = APP_URL || (NATIVE ? '' : window.location.origin + window.location.pathname); return lines.map(x => '\u200f' + x).join('\n') + (link ? '\n' + link : ''); }
+/* the daily board, in the clean form of 1.12.3 (for WhatsApp): the edition, then time, words and hints on one line */
+function hintsWord(h) { return !h ? 'ללא רמזים' : h === 1 ? 'רמז אחד' : h + ' רמזים'; }
 function dailyShareText(b, secs, hints, checks, day) {
-  return shareLines(['פשיטא: הארמית של מסכת שבת', '🧩 תשחץ יומי #' + b.ed, '⏱️ זמן: ' + mmss(secs || 0), '💡 ' + (hints ? 'רמזים: ' + hints : 'בלי רמזים'), '🔥 רצף: ' + xwStreak()]);
+  return shareLines(['פשיטא | תשחץ יומי #' + b.ed, 'זמן: ' + mmss(secs || 0) + ' | ' + b.words.length + ' מילים | ' + hintsWord(hints)]);
+}
+/* a result to share (1.12.3): on a phone the share sheet of the system (WhatsApp in one tap), else, or when the sheet is not
+   there or fails, a copy to the clipboard with a short "הועתק". Closing the sheet without sending is not a failure */
+function shareResult(text, game) {
+  track('share_result', { game });
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  if (navigator.share && coarse) {
+    try { navigator.share({ text }).catch(e => { if (!e || e.name !== 'AbortError') copyText(text); }); return; } catch (e) { /* fall through */ }
+  }
+  copyText(text);
 }
 function xwShareText() {
   const g = ST.xg, h = g.hint.size, wrong = g.done ? 0 : xwWrong();
@@ -894,7 +930,7 @@ function xwSummary() {
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
   on('xs-new', () => { closeSheet(); startXW(); });
   on('xs-back', closeSheet);
-  on('xs-share', () => copyText(xwShareText()));
+  on('xs-share', () => shareResult(xwShareText(), 'crossword'));
   on('xs-close', () => { closeSheet(); if (!g.done) goBack(); });
 }
 /* copy to the clipboard, with the older route for web views that refuse the newer one */
@@ -902,9 +938,9 @@ function copyText(text) {
   const old = () => {
     const t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
     document.body.appendChild(t); t.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-    t.remove(); toast(ok ? 'התוצאה הועתקה. אפשר להדביק אותה בכל הודעה' : 'לא הצלחתי להעתיק במכשיר הזה');
+    t.remove(); toast(ok ? 'הועתק! אפשר להדביק בכל הודעה' : 'לא הצלחתי להעתיק במכשיר הזה');
   };
-  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(() => toast('התוצאה הועתקה. אפשר להדביק אותה בכל הודעה'), old); return; } } catch (e) { /* fall through */ }
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(() => toast('הועתק! אפשר להדביק בכל הודעה'), old); return; } } catch (e) { /* fall through */ }
   old();
 }
 /* the quiet clock: it runs only while the board is on screen and the app is in front, and stops once the board is solved */
@@ -969,4 +1005,4 @@ document.addEventListener('keydown', ev => {
   else if (k === ' ') { ev.preventDefault(); const ws = ST.xg.cw[ST.xg.cur]; if (ws && ws.length > 1) { ST.xg.act = ws.find(i => i !== ST.xg.act); ST.xg._tp = null; xwPatch(); xwSaveSoon(); } }
 });
 
-export { BK, XE, XKEY, XKEYS, XW_ALL, XW_TWO, archMax, bankInit, bindLabNav, copyText, dailyShareText, keyLetter, labNavHtml, lazyFor, mmss, openArchWD, openArchXW, openArchive, renderGameReview, renderXW, renderXWReview, renderXWSetup, restoreXw, shareLines, startXWDaily, xwAns, xwCfg, xwDailyBoard, xwEdition, xwEntry, xwFromRefs, xwGame, xwInit, xwLoad, xwOpen, xwOv, xwPaint, xwPool, xwSave, xwSrc, xwStale, xwStopClock, xwTry };
+export { BK, XE, XKEY, XKEYS, XW_ALL, XW_TWO, archMax, bankInit, bindLabNav, copyText, dailyShareText, shareResult, keyLetter, labNavHtml, lazyFor, mmss, openArchWD, openArchXW, openArchive, renderGameReview, renderXW, renderXWReview, renderXWSetup, restoreXw, shareLines, startXWDaily, xwAns, xwCfg, xwDailyBoard, xwEdition, xwEntry, xwFromRefs, xwGame, xwInit, xwLoad, xwOpen, xwOv, xwPaint, xwPool, xwSave, xwSrc, xwStale, xwStopClock, xwTry };
